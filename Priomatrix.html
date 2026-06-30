@@ -5,30 +5,56 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PrioMatrix</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;450;500;600&display=swap" rel="stylesheet">
   <script>
-    tailwind.config = { darkMode: 'class' }
+    tailwind.config = {
+      darkMode: 'class',
+      theme: { extend: {
+        fontFamily: {
+          sans: ['Inter', 'system-ui', 'sans-serif'],
+          display: ['"Space Grotesk"', 'Inter', 'sans-serif'],
+        }
+      }}
+    }
   </script>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <style>
-    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    html, body { font-feature-settings: "cv02","cv03","cv04","cv11"; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
     ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.12); border-radius: 3px; }
-    .dark ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); }
-    @keyframes slideIn { from { transform: translateY(6px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-    @keyframes slideUp { from { transform: translateY(16px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+    ::-webkit-scrollbar-thumb { background: rgba(100,100,120,0.18); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(100,100,120,0.32); }
+
+    .dot-grid {
+      background-image: radial-gradient(circle, rgba(30,30,50,0.05) 1px, transparent 1px);
+      background-size: 22px 22px;
+    }
+    .dark .dot-grid {
+      background-image: radial-gradient(circle, rgba(200,210,255,0.04) 1px, transparent 1px);
+    }
+    .vert-text { writing-mode: vertical-rl; transform: rotate(180deg); }
+
+    @keyframes slideIn { from { transform: translateY(7px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+    @keyframes slideUp { from { transform: translateY(18px) scale(.97); opacity: 0; } to { transform: translateY(0) scale(1); opacity: 1; } }
     @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-    .anim-slide { animation: slideIn 0.18s ease-out; }
-    .anim-toast { animation: slideUp 0.25s ease-out; }
-    .anim-fade { animation: fadeIn 0.15s ease-out; }
+    @keyframes zoomIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+    @keyframes pop { 0% { transform: scale(1); } 40% { transform: scale(1.35); } 100% { transform: scale(1); } }
+    .anim-slide { animation: slideIn 0.2s cubic-bezier(.2,.8,.3,1); }
+    .anim-toast { animation: slideUp 0.28s cubic-bezier(.2,.8,.3,1); }
+    .anim-fade { animation: fadeIn 0.16s ease-out; }
+    .anim-zoom { animation: zoomIn 0.22s cubic-bezier(.2,.8,.3,1); }
+    .anim-pop { animation: pop 0.4s ease-out; }
     .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-    .lightbox-img { max-width: 90vw; max-height: 85vh; object-fit: contain; border-radius: 12px; box-shadow: 0 25px 60px rgba(0,0,0,0.5); }
-    @keyframes zoomIn { from { transform: scale(0.88); opacity: 0; } to { transform: scale(1); opacity: 1; } }
-    .anim-zoom { animation: zoomIn 0.2s ease-out; }
+    .lightbox-img { max-width: 90vw; max-height: 85vh; object-fit: contain; border-radius: 14px; box-shadow: 0 30px 70px rgba(0,0,0,0.55); }
+    .card-shadow { box-shadow: 0 1px 2px rgba(20,20,40,0.04), 0 6px 16px -8px rgba(20,20,40,0.12); }
+    .dark .card-shadow { box-shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px -10px rgba(0,0,0,0.6); }
   </style>
 </head>
-<body>
+<body class="font-sans antialiased">
   <div id="root"></div>
   <script type="text/babel">
     const { useState, useEffect, useRef, useCallback, useMemo } = React;
@@ -50,18 +76,30 @@
       search: ["M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16z","M21 21l-4.35-4.35"],
       note: ["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z","M14 2v6h6","M16 13H8M16 17H8M10 9H8"],
       db: ["M12 2C6.48 2 2 4.24 2 7s4.48 5 10 5 10-2.24 10-5-4.48-5-10-5z","M2 7v5c0 2.76 4.48 5 10 5s10-2.24 10-5V7","M2 12v5c0 2.76 4.48 5 10 5s10-2.24 10-5v-5"],
-      target: ["M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z","M12 18a6 6 0 1 0 0-12 6 6 0 0 0 0 12z","M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"],
-      copy: ["M20 9h-9a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2z","M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"],
-      alert: ["M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z","M12 8v4M12 16h.01"],
+      bolt: "M13 2 3 14h9l-1 8 10-12h-9l1-8z",
+      arrowUp: "M12 19V5M5 12l7-7 7 7",
+      arrowRight: "M5 12h14M12 5l7 7-7 7",
+      chevUp: "M18 15l-6-6-6 6",
+      chevDown: "M6 9l6 6 6-6",
     };
-    const Ic = ({ n, size = 16, cls = "" }) => {
+    const Ic = ({ n, size = 16, cls = "", sw = 2 }) => {
       const d = PATHS[n]; if (!d) return null;
       return (
-        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={cls}>
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" className={cls}>
           {Array.isArray(d) ? d.map((p,i) => <path key={i} d={p}/>) : <path d={d}/>}
         </svg>
       );
     };
+
+    // Brand logo — a 2×2 priority matrix glyph
+    const Logo = ({ size = 30 }) => (
+      <svg width={size} height={size} viewBox="0 0 32 32" className="shrink-0">
+        <rect x="2" y="2" width="13" height="13" rx="3.5" fill="#f43f5e"/>
+        <rect x="17" y="2" width="13" height="13" rx="3.5" fill="#3b82f6"/>
+        <rect x="2" y="17" width="13" height="13" rx="3.5" fill="#f59e0b"/>
+        <rect x="17" y="17" width="13" height="13" rx="3.5" fill="#a1a1aa"/>
+      </svg>
+    );
 
     // ── Utils ──────────────────────────────────────────────────────
     const getISOWeek = (date) => {
@@ -72,12 +110,23 @@
       return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
     };
 
+    // Date range (Mon–Sun) for an ISO week of the current year
+    const weekDateRange = (week, year = new Date().getFullYear()) => {
+      const simple = new Date(year, 0, 1 + (week - 1) * 7);
+      const dow = simple.getDay();
+      const monday = new Date(simple);
+      monday.setDate(simple.getDate() - ((dow + 6) % 7));
+      const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
+      const f = d => `${d.getDate()}.${d.getMonth() + 1}.`;
+      return `${f(monday)} – ${f(sunday)}`;
+    };
+
     const resizeImage = (file) => new Promise((resolve) => {
       const reader = new FileReader();
       reader.onload = (e) => {
         const img = new Image();
         img.onload = () => {
-          const MAX = 600; let { width, height } = img;
+          const MAX = 700; let { width, height } = img;
           if (width > MAX || height > MAX) {
             if (width > height) { height = Math.round(height * MAX / width); width = MAX; }
             else { width = Math.round(width * MAX / height); height = MAX; }
@@ -85,7 +134,7 @@
           const c = document.createElement('canvas');
           c.width = width; c.height = height;
           c.getContext('2d').drawImage(img, 0, 0, width, height);
-          resolve(c.toDataURL('image/jpeg', 0.75));
+          resolve(c.toDataURL('image/jpeg', 0.8));
         };
         img.src = e.target.result;
       };
@@ -95,16 +144,38 @@
     const fmtBytes = (b) => b < 1024 ? b + ' B' : b < 1048576 ? (b/1024).toFixed(1) + ' KB' : (b/1048576).toFixed(2) + ' MB';
     const storageSize = () => { try { return new Blob([localStorage.getItem('matrix_tasks')||'']).size; } catch { return 0; } };
 
+    // ── Progress Ring ──────────────────────────────────────────────
+    const Ring = ({ pct, size = 36, stroke = 3.5 }) => {
+      const r = (size - stroke) / 2;
+      const c = 2 * Math.PI * r;
+      const done = pct >= 1;
+      return (
+        <div className="relative shrink-0" style={{ width: size, height: size }}>
+          <svg width={size} height={size} className="-rotate-90">
+            <circle cx={size/2} cy={size/2} r={r} fill="none" strokeWidth={stroke}
+              className="stroke-neutral-200 dark:stroke-neutral-700"/>
+            <circle cx={size/2} cy={size/2} r={r} fill="none" strokeWidth={stroke} strokeLinecap="round"
+              className={done ? 'stroke-emerald-500' : 'stroke-blue-500'}
+              strokeDasharray={c} strokeDashoffset={c * (1 - pct)}
+              style={{ transition: 'stroke-dashoffset .5s cubic-bezier(.2,.8,.3,1)' }}/>
+          </svg>
+          <span className="absolute inset-0 flex items-center justify-center text-[10px] font-semibold font-display text-neutral-600 dark:text-neutral-300">
+            {Math.round(pct * 100)}
+          </span>
+        </div>
+      );
+    };
+
     // ── Toast ──────────────────────────────────────────────────────
     const Toast = ({ toasts, dismiss }) => (
       <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] flex flex-col gap-2 items-center pointer-events-none">
         {toasts.map(t => (
-          <div key={t.id} className={`anim-toast flex items-center gap-3 px-4 py-2.5 rounded-2xl shadow-2xl text-sm font-medium pointer-events-auto
-            ${t.type==='error' ? 'bg-red-600 text-white' : t.type==='success' ? 'bg-emerald-600 text-white' : 'bg-neutral-900 dark:bg-white text-white dark:text-neutral-900'}`}>
+          <div key={t.id} className={`anim-toast flex items-center gap-3 pl-4 pr-3 py-2.5 rounded-2xl shadow-2xl text-sm font-medium pointer-events-auto backdrop-blur
+            ${t.type==='error' ? 'bg-rose-600/95 text-white' : t.type==='success' ? 'bg-emerald-600/95 text-white' : 'bg-neutral-900/95 dark:bg-white/95 text-white dark:text-neutral-900'}`}>
             <span>{t.message}</span>
             {t.action && (
               <button onClick={() => { t.action(); dismiss(t.id); }}
-                className="underline underline-offset-2 opacity-75 hover:opacity-100 transition-opacity">
+                className="font-semibold px-2 py-1 rounded-lg bg-white/15 dark:bg-black/10 hover:bg-white/25 transition-colors">
                 {t.actionLabel || 'Rückgängig'}
               </button>
             )}
@@ -121,11 +192,9 @@
         return () => window.removeEventListener('keydown', fn);
       }, []);
       return (
-        <div className="fixed inset-0 z-[200] bg-black/85 backdrop-blur-sm anim-fade flex items-center justify-center p-4 cursor-zoom-out"
-          onClick={onClose}>
+        <div className="fixed inset-0 z-[200] bg-black/85 backdrop-blur-sm anim-fade flex items-center justify-center p-4 cursor-zoom-out" onClick={onClose}>
           <img src={src} className="lightbox-img anim-zoom" onClick={e=>e.stopPropagation()}/>
-          <button onClick={onClose}
-            className="absolute top-4 right-4 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors">
+          <button onClick={onClose} className="absolute top-4 right-4 p-2.5 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors">
             <Ic n="x" size={20}/>
           </button>
         </div>
@@ -137,46 +206,43 @@
       const [q, setQ] = useState('');
       const ref = useRef(null);
       useEffect(() => { ref.current?.focus(); }, []);
-
       const results = useMemo(() => {
         if (!q.trim()) return [];
         const lq = q.toLowerCase();
-        return tasks.filter(t => t.text.toLowerCase().includes(lq) || (t.notes||'').toLowerCase().includes(lq));
+        return tasks.filter(t => t.text.toLowerCase().includes(lq) || (t.notes||'').toLowerCase().includes(lq)).slice(0, 50);
       }, [q, tasks]);
-
-      const qLabel = { q1:'Q1 · Sofort', q2:'Q2 · Einplanen', q3:'Q3 · Delegieren', q4:'Q4 · Eliminieren' };
-      const qCls = { q1:'text-red-500', q2:'text-blue-500', q3:'text-amber-500', q4:'text-neutral-400' };
-
+      const qMeta = {
+        q1:{l:'Erledigen', c:'text-rose-500 bg-rose-50 dark:bg-rose-500/10'},
+        q2:{l:'Einplanen', c:'text-blue-500 bg-blue-50 dark:bg-blue-500/10'},
+        q3:{l:'Delegieren', c:'text-amber-500 bg-amber-50 dark:bg-amber-500/10'},
+        q4:{l:'Eliminieren', c:'text-zinc-400 bg-zinc-100 dark:bg-zinc-500/10'},
+      };
       return (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm anim-fade flex items-start justify-center pt-24 px-4" onClick={onClose}>
-          <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-2xl w-full max-w-lg border border-neutral-200 dark:border-neutral-700 overflow-hidden" onClick={e=>e.stopPropagation()}>
-            <div className="flex items-center gap-3 px-4 py-3 border-b border-neutral-100 dark:border-neutral-800">
+          <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-2xl w-full max-w-lg border border-neutral-200 dark:border-neutral-700 overflow-hidden anim-zoom" onClick={e=>e.stopPropagation()}>
+            <div className="flex items-center gap-3 px-4 py-3.5 border-b border-neutral-100 dark:border-neutral-800">
               <Ic n="search" size={17} cls="text-neutral-400 shrink-0"/>
-              <input ref={ref} value={q} onChange={e=>setQ(e.target.value)}
-                placeholder="Aufgaben durchsuchen…"
+              <input ref={ref} value={q} onChange={e=>setQ(e.target.value)} placeholder="Aufgaben & Notizen durchsuchen…"
                 className="flex-1 bg-transparent outline-none text-neutral-800 dark:text-neutral-100 placeholder-neutral-400 text-sm"
                 onKeyDown={e=>e.key==='Escape'&&onClose()}/>
               <kbd className="text-xs text-neutral-400 bg-neutral-100 dark:bg-neutral-800 px-2 py-0.5 rounded-lg font-mono">ESC</kbd>
             </div>
             <div className="max-h-80 overflow-y-auto">
-              {q.trim() && results.length === 0 && (
-                <div className="py-10 text-center text-sm text-neutral-400">Keine Treffer für „{q}"</div>
-              )}
+              {q.trim() && results.length === 0 && <div className="py-12 text-center text-sm text-neutral-400">Keine Treffer für „{q}"</div>}
               {!q.trim() && (
-                <div className="py-10 text-center text-sm text-neutral-400">
-                  <Ic n="search" size={22} cls="mx-auto mb-2 opacity-30"/>
-                  Suchbegriff eingeben…
+                <div className="py-12 text-center text-sm text-neutral-400">
+                  <Ic n="search" size={24} cls="mx-auto mb-2 opacity-25"/>Tippen, um zu suchen…
                 </div>
               )}
               {results.map(t => (
                 <button key={t.id} onClick={()=>onJump(t)}
-                  className="w-full flex items-start gap-3 px-4 py-3 hover:bg-neutral-50 dark:hover:bg-neutral-800 text-left border-b border-neutral-100 dark:border-neutral-800 last:border-0 transition-colors">
-                  <span className={`mt-0.5 text-xs font-semibold shrink-0 ${qCls[t.quadrant]}`}>{qLabel[t.quadrant]}</span>
+                  className="w-full flex items-center gap-3 px-4 py-3 hover:bg-neutral-50 dark:hover:bg-neutral-800 text-left border-b border-neutral-100 dark:border-neutral-800 last:border-0 transition-colors">
+                  <span className={`text-xs font-semibold px-2 py-1 rounded-lg shrink-0 ${qMeta[t.quadrant].c}`}>{qMeta[t.quadrant].l}</span>
                   <div className="flex-1 min-w-0">
-                    <p className={`text-sm text-neutral-700 dark:text-neutral-200 ${t.endKw?'line-through opacity-40':''}`}>{t.text}</p>
+                    <p className={`text-sm text-neutral-700 dark:text-neutral-200 truncate ${t.endKw?'line-through opacity-40':''}`}>{t.text}</p>
                     {t.notes && <p className="text-xs text-neutral-400 truncate mt-0.5">{t.notes}</p>}
                   </div>
-                  <span className="text-xs text-neutral-400 shrink-0">KW {t.startKw}</span>
+                  <span className="text-xs text-neutral-400 shrink-0 font-medium">KW {t.startKw}</span>
                 </button>
               ))}
             </div>
@@ -189,18 +255,13 @@
     const BackupPanel = ({ tasks, onImport, onClose, addToast }) => {
       const fileRef = useRef(null);
       const sz = storageSize();
-
       const doExport = () => {
-        const payload = { version: 2, exportedAt: new Date().toISOString(), tasks };
+        const payload = { app:'PrioMatrix', version: 2, exportedAt: new Date().toISOString(), tasks };
         const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-        const a = Object.assign(document.createElement('a'), {
-          href: URL.createObjectURL(blob),
-          download: `priomatrix-backup-${new Date().toISOString().slice(0,10)}.json`
-        });
+        const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: `priomatrix-backup-${new Date().toISOString().slice(0,10)}.json` });
         a.click(); URL.revokeObjectURL(a.href);
         addToast({ type:'success', message:`${tasks.length} Aufgaben exportiert` });
       };
-
       const doImport = (e) => {
         const file = e.target.files[0]; if (!file) return;
         const reader = new FileReader();
@@ -209,65 +270,43 @@
             const data = JSON.parse(ev.target.result);
             const list = Array.isArray(data) ? data : (data.tasks || []);
             if (!Array.isArray(list)) throw new Error();
-            onImport(list);
-            addToast({ type:'success', message:`${list.length} Aufgaben importiert` });
-            onClose();
+            onImport(list); addToast({ type:'success', message:`${list.length} Aufgaben importiert` }); onClose();
           } catch { addToast({ type:'error', message:'Ungültige Backup-Datei' }); }
         };
         reader.readAsText(file);
         if (fileRef.current) fileRef.current.value = '';
       };
-
       const doClear = () => {
-        if (!confirm(`Alle ${tasks.length} Aufgaben wirklich löschen?`)) return;
-        onImport([]);
-        addToast({ type:'success', message:'Alle Daten gelöscht' });
-        onClose();
+        if (!confirm(`Alle ${tasks.length} Aufgaben unwiderruflich löschen?`)) return;
+        onImport([]); addToast({ type:'success', message:'Alle Daten gelöscht' }); onClose();
       };
-
       return (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm anim-fade flex items-center justify-center p-4" onClick={onClose}>
-          <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-2xl w-full max-w-sm border border-neutral-200 dark:border-neutral-700 overflow-hidden" onClick={e=>e.stopPropagation()}>
+          <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-2xl w-full max-w-sm border border-neutral-200 dark:border-neutral-700 overflow-hidden anim-zoom" onClick={e=>e.stopPropagation()}>
             <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-100 dark:border-neutral-800">
               <div className="flex items-center gap-2">
                 <Ic n="db" size={16} cls="text-neutral-500"/>
-                <h2 className="font-semibold text-neutral-800 dark:text-neutral-100">Backup & Daten</h2>
+                <h2 className="font-display font-semibold text-neutral-800 dark:text-neutral-100">Backup & Daten</h2>
               </div>
-              <button onClick={onClose} className="p-1.5 rounded-xl hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-400 transition-colors">
-                <Ic n="x" size={15}/>
-              </button>
+              <button onClick={onClose} className="p-1.5 rounded-xl hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-400 transition-colors"><Ic n="x" size={15}/></button>
             </div>
-
             <div className="p-5 space-y-3">
-              {/* Storage info */}
-              <div className="bg-neutral-50 dark:bg-neutral-800 rounded-xl p-4">
+              <div className="bg-neutral-50 dark:bg-neutral-800/60 rounded-xl p-4">
                 <p className="text-xs text-neutral-500 dark:text-neutral-400 font-medium uppercase tracking-wider mb-2">Lokaler Speicher</p>
                 <div className="flex items-baseline gap-1.5 mb-2">
-                  <span className="text-xl font-bold text-neutral-800 dark:text-neutral-100">{fmtBytes(sz)}</span>
+                  <span className="text-xl font-bold font-display text-neutral-800 dark:text-neutral-100">{fmtBytes(sz)}</span>
                   <span className="text-xs text-neutral-400">/ ~5 MB</span>
                 </div>
                 <div className="h-1.5 bg-neutral-200 dark:bg-neutral-700 rounded-full overflow-hidden">
-                  <div className="h-full bg-blue-500 rounded-full transition-all" style={{width:`${Math.min(sz/52428.8,100)}%`}}/>
+                  <div className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full transition-all" style={{width:`${Math.min(sz/52428.8,100)}%`}}/>
                 </div>
                 <p className="text-xs text-neutral-400 mt-2">{tasks.length} Aufgaben gespeichert</p>
               </div>
-
-              <button onClick={doExport}
-                className="w-full flex items-center gap-3 px-4 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-xl font-medium text-sm transition-colors">
-                <Ic n="dl" size={16}/> Als JSON exportieren
-              </button>
-
-              <button onClick={()=>fileRef.current?.click()}
-                className="w-full flex items-center gap-3 px-4 py-3 bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 rounded-xl font-medium text-sm transition-colors">
-                <Ic n="ul" size={16}/> Backup importieren
-              </button>
+              <button onClick={doExport} className="w-full flex items-center gap-3 px-4 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-xl font-medium text-sm transition-colors"><Ic n="dl" size={16}/> Als JSON exportieren</button>
+              <button onClick={()=>fileRef.current?.click()} className="w-full flex items-center gap-3 px-4 py-3 bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 rounded-xl font-medium text-sm transition-colors"><Ic n="ul" size={16}/> Backup importieren</button>
               <input ref={fileRef} type="file" accept=".json" className="hidden" onChange={doImport}/>
-
               {tasks.length > 0 && (
-                <button onClick={doClear}
-                  className="w-full flex items-center gap-3 px-4 py-3 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400 rounded-xl font-medium text-sm transition-colors">
-                  <Ic n="trash" size={16}/> Alle Daten löschen
-                </button>
+                <button onClick={doClear} className="w-full flex items-center gap-3 px-4 py-3 bg-rose-50 dark:bg-rose-900/20 hover:bg-rose-100 dark:hover:bg-rose-900/30 text-rose-600 dark:text-rose-400 rounded-xl font-medium text-sm transition-colors"><Ic n="trash" size={16}/> Alle Daten löschen</button>
               )}
             </div>
           </div>
@@ -282,28 +321,20 @@
       useEffect(() => { ref.current?.focus(); }, []);
       return (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm anim-fade flex items-center justify-center p-4" onClick={onClose}>
-          <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-2xl w-full max-w-md border border-neutral-200 dark:border-neutral-700 overflow-hidden" onClick={e=>e.stopPropagation()}>
+          <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-2xl w-full max-w-md border border-neutral-200 dark:border-neutral-700 overflow-hidden anim-zoom" onClick={e=>e.stopPropagation()}>
             <div className="flex items-center justify-between px-5 py-3.5 border-b border-neutral-100 dark:border-neutral-800">
               <p className="font-medium text-neutral-800 dark:text-neutral-100 truncate text-sm pr-4">{task.text}</p>
-              <button onClick={onClose} className="p-1.5 rounded-xl hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-400 shrink-0 transition-colors">
-                <Ic n="x" size={14}/>
-              </button>
+              <button onClick={onClose} className="p-1.5 rounded-xl hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-400 shrink-0 transition-colors"><Ic n="x" size={14}/></button>
             </div>
             <div className="p-4">
-              <textarea ref={ref} value={notes} onChange={e=>setNotes(e.target.value)}
-                placeholder="Notizen, Details, Links…"
+              <textarea ref={ref} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Notizen, Details, Links…"
                 className="w-full h-36 resize-none bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-xl p-3 text-sm text-neutral-700 dark:text-neutral-200 outline-none focus:border-blue-400 dark:focus:border-blue-500 placeholder-neutral-400 transition-colors"
-                onKeyDown={e=>{ if(e.key==='Escape') onClose(); if(e.key==='Enter'&&e.metaKey){ onSave(notes); onClose(); }}}/>
+                onKeyDown={e=>{ if(e.key==='Escape') onClose(); if(e.key==='Enter'&&(e.metaKey||e.ctrlKey)){ onSave(notes); onClose(); }}}/>
               <div className="flex gap-2 mt-3">
-                <button onClick={()=>{ onSave(notes); onClose(); }}
-                  className="flex-1 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-xl text-sm font-medium transition-colors">
-                  Speichern
-                </button>
-                <button onClick={onClose}
-                  className="px-4 py-2 bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-600 dark:text-neutral-300 rounded-xl text-sm transition-colors">
-                  Abbrechen
-                </button>
+                <button onClick={()=>{ onSave(notes); onClose(); }} className="flex-1 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-xl text-sm font-medium transition-colors">Speichern</button>
+                <button onClick={onClose} className="px-4 py-2 bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-600 dark:text-neutral-300 rounded-xl text-sm transition-colors">Abbrechen</button>
               </div>
+              <p className="text-xs text-neutral-400 mt-2 text-center">Tipp: Strg/⌘ + Enter zum Speichern</p>
             </div>
           </div>
         </div>
@@ -311,7 +342,7 @@
     };
 
     // ── TaskItem ───────────────────────────────────────────────────
-    const TaskItem = ({ task, isCompleted, toggleTask, deleteTask, attachImageToTask, removeImage, editTask, updateNotes, addToast }) => {
+    const TaskItem = ({ task, isCompleted, accentDot, toggleTask, deleteTask, attachImageToTask, removeImage, editTask, updateNotes, addToast, currentKw, selectedKw }) => {
       const [dropOver, setDropOver] = useState(false);
       const [dragging, setDragging] = useState(false);
       const [editing, setEditing] = useState(false);
@@ -319,30 +350,27 @@
       const [showNotes, setShowNotes] = useState(false);
       const [lightbox, setLightbox] = useState(false);
       const fileRef = useRef(null);
+      const carriedOver = !isCompleted && task.startKw < selectedKw;
 
       const handleDrop = async (e) => {
         e.preventDefault(); setDropOver(false);
         const file = e.dataTransfer.files[0];
         if (file?.type.startsWith('image/')) attachImageToTask(task.id, await resizeImage(file));
       };
-
       const handleFile = async (e) => {
         const file = e.target.files[0];
         if (file?.type.startsWith('image/')) attachImageToTask(task.id, await resizeImage(file));
         if (fileRef.current) fileRef.current.value = '';
       };
-
       const saveEdit = () => {
         setEditing(false);
         const t = editText.trim();
-        if (t && t !== task.text) editTask(task.id, t);
-        else setEditText(task.text);
+        if (t && t !== task.text) editTask(task.id, t); else setEditText(task.text);
       };
-
       const handleDelete = () => {
         const snap = { ...task };
         deleteTask(task.id);
-        addToast({ message:'Aufgabe gelöscht', action:()=>editTask(null,null,snap), actionLabel:'Rückgängig' });
+        addToast({ message:'Aufgabe gelöscht', action:()=>editTask(null,null,snap) });
       };
 
       return (
@@ -354,63 +382,60 @@
             onDragOver={e=>{ e.preventDefault(); setDropOver(true); }}
             onDragLeave={()=>setDropOver(false)}
             onDrop={handleDrop}
-            className={`group flex flex-col p-2.5 rounded-xl border anim-slide transition-all
-              bg-white dark:bg-neutral-800
-              ${isCompleted ? 'border-neutral-200 dark:border-neutral-700 opacity-55' : 'border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 dark:hover:border-neutral-600 hover:shadow-sm'}
+            className={`group relative flex flex-col pl-3 pr-2.5 py-2.5 rounded-xl border anim-slide transition-all bg-white dark:bg-neutral-800/80
+              ${isCompleted ? 'border-neutral-200/70 dark:border-neutral-700/60 opacity-60' : 'border-neutral-200 dark:border-neutral-700 hover:border-neutral-300 dark:hover:border-neutral-600 hover:shadow-md hover:-translate-y-px'}
               ${dropOver ? 'ring-2 ring-blue-400 border-blue-300 dark:border-blue-600' : ''}
-              ${dragging ? 'opacity-25 scale-[0.97]' : ''}
-              ${!editing ? 'cursor-grab active:cursor-grabbing' : ''}
-            `}
+              ${dragging ? 'opacity-30 scale-[0.97] rotate-1' : ''}
+              ${!editing ? 'cursor-grab active:cursor-grabbing' : ''}`}
           >
-            <div className="flex items-start gap-2 w-full">
+            <div className="flex items-start gap-2.5 w-full">
               <button onClick={()=>toggleTask(task.id)}
-                className={`flex-shrink-0 mt-0.5 transition-colors rounded-full
-                  ${isCompleted ? 'text-emerald-500' : 'text-neutral-300 dark:text-neutral-600 hover:text-neutral-500 dark:hover:text-neutral-400'}`}>
-                <Ic n={isCompleted?'check':'circle'} size={16}/>
+                className={`flex-shrink-0 mt-0.5 transition-all rounded-full ${isCompleted ? 'text-emerald-500 anim-pop' : 'text-neutral-300 dark:text-neutral-600 hover:text-emerald-500 hover:scale-110'}`}>
+                <Ic n={isCompleted?'check':'circle'} size={17}/>
               </button>
 
               <div className="flex-1 min-w-0">
                 {editing ? (
                   <input type="text" value={editText} autoFocus
-                    onChange={e=>setEditText(e.target.value)}
-                    onBlur={saveEdit}
+                    onChange={e=>setEditText(e.target.value)} onBlur={saveEdit}
                     onKeyDown={e=>{ if(e.key==='Enter') saveEdit(); if(e.key==='Escape'){ setEditText(task.text); setEditing(false); } }}
                     className="w-full bg-blue-50 dark:bg-blue-900/30 border border-blue-300 dark:border-blue-600 rounded-lg px-2 py-0.5 text-sm text-neutral-800 dark:text-neutral-100 outline-none"/>
                 ) : (
                   <span onClick={()=>!isCompleted&&setEditing(true)}
-                    className={`block w-full break-words text-sm leading-snug px-1 py-0.5 rounded-lg -ml-1 transition-colors
-                      ${isCompleted ? 'text-neutral-400 dark:text-neutral-500 line-through cursor-default' : 'text-neutral-700 dark:text-neutral-200 cursor-text hover:bg-neutral-50 dark:hover:bg-neutral-700/50'}`}>
+                    className={`block w-full break-words text-sm leading-snug px-1 py-0.5 rounded-lg -ml-1 transition-colors ${isCompleted ? 'text-neutral-400 dark:text-neutral-500 line-through cursor-default' : 'text-neutral-700 dark:text-neutral-200 cursor-text hover:bg-neutral-50 dark:hover:bg-neutral-700/50'}`}>
                     {task.text}
-                    {task.notes && <Ic n="note" size={10} cls="inline ml-1 -mt-0.5 opacity-40"/>}
                   </span>
+                )}
+                {(carriedOver || task.notes) && !editing && (
+                  <div className="flex items-center gap-2 mt-1 ml-0">
+                    {carriedOver && (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10 px-1.5 py-0.5 rounded-md" title={`Seit KW ${task.startKw} offen`}>
+                        <Ic n="arrow" size={9}/> seit KW {task.startKw}
+                      </span>
+                    )}
+                    {task.notes && <Ic n="note" size={11} cls="text-neutral-400 dark:text-neutral-500"/>}
+                  </div>
                 )}
               </div>
 
               <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 shrink-0 transition-opacity">
                 <button onClick={()=>setShowNotes(true)} title="Notiz" className="p-1 rounded-lg text-neutral-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"><Ic n="note" size={13}/></button>
                 <button onClick={()=>fileRef.current?.click()} title="Bild" className="p-1 rounded-lg text-neutral-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"><Ic n="image" size={13}/></button>
-                <button onClick={handleDelete} title="Löschen" className="p-1 rounded-lg text-neutral-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors"><Ic n="trash" size={13}/></button>
+                <button onClick={handleDelete} title="Löschen" className="p-1 rounded-lg text-neutral-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/30 transition-colors"><Ic n="trash" size={13}/></button>
               </div>
             </div>
 
             <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFile}/>
 
-            {task.notes && !editing && (
-              <p className="mt-1 ml-6 text-xs text-neutral-400 dark:text-neutral-500 line-clamp-2 leading-relaxed">{task.notes}</p>
-            )}
+            {task.notes && !editing && <p className="mt-1 ml-7 text-xs text-neutral-400 dark:text-neutral-500 line-clamp-2 leading-relaxed">{task.notes}</p>}
 
             {task.image && (
-              <div className="mt-2 ml-6 relative group/img inline-block">
-                <img src={task.image} alt="" onClick={()=>setLightbox(true)}
-                  className="max-h-40 rounded-xl border border-neutral-200 dark:border-neutral-700 object-contain cursor-zoom-in hover:opacity-90 transition-opacity"/>
-                <button onClick={()=>removeImage(task.id)}
-                  className="absolute -top-1.5 -right-1.5 bg-white dark:bg-neutral-800 text-neutral-400 hover:text-red-500 rounded-full shadow-md p-0.5 opacity-0 group-hover/img:opacity-100 transition-opacity border border-neutral-200 dark:border-neutral-700">
-                  <Ic n="x" size={11}/>
-                </button>
+              <div className="mt-2 ml-7 relative group/img inline-block">
+                <img src={task.image} alt="" onClick={()=>setLightbox(true)} className="max-h-40 rounded-xl border border-neutral-200 dark:border-neutral-700 object-contain cursor-zoom-in hover:opacity-90 transition-opacity"/>
+                <button onClick={()=>removeImage(task.id)} className="absolute -top-1.5 -right-1.5 bg-white dark:bg-neutral-800 text-neutral-400 hover:text-rose-500 rounded-full shadow-md p-0.5 opacity-0 group-hover/img:opacity-100 transition-opacity border border-neutral-200 dark:border-neutral-700"><Ic n="x" size={11}/></button>
               </div>
             )}
           </div>
-
           {showNotes && <NotesModal task={task} onSave={n=>updateNotes(task.id,n)} onClose={()=>setShowNotes(false)}/>}
           {lightbox && task.image && <Lightbox src={task.image} onClose={()=>setLightbox(false)}/>}
         </>
@@ -419,26 +444,44 @@
 
     // ── Quadrant ───────────────────────────────────────────────────
     const Q_STYLE = {
-      q1: { border:'border-red-400',   label:'Q1', badge:'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400',   accent:'text-red-500',   btn:'hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30' },
-      q2: { border:'border-blue-400',  label:'Q2', badge:'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400', accent:'text-blue-500', btn:'hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30' },
-      q3: { border:'border-amber-400', label:'Q3', badge:'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400', accent:'text-amber-500', btn:'hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/30' },
-      q4: { border:'border-neutral-300 dark:border-neutral-600', label:'Q4', badge:'bg-neutral-100 dark:bg-neutral-800 text-neutral-500', accent:'text-neutral-400', btn:'hover:text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800' },
+      q1: { verb:'Erledigen', icon:'bolt', accent:'text-rose-500', dot:'bg-rose-500',
+            tint:'bg-rose-50/40 dark:bg-rose-950/15', headTint:'bg-rose-50/80 dark:bg-rose-950/25',
+            bar:'bg-rose-500', pill:'bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300',
+            btn:'hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/30' },
+      q2: { verb:'Einplanen', icon:'cal', accent:'text-blue-500', dot:'bg-blue-500',
+            tint:'bg-blue-50/40 dark:bg-blue-950/15', headTint:'bg-blue-50/80 dark:bg-blue-950/25',
+            bar:'bg-blue-500', pill:'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300',
+            btn:'hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30' },
+      q3: { verb:'Delegieren', icon:'arrowRight', accent:'text-amber-500', dot:'bg-amber-500',
+            tint:'bg-amber-50/40 dark:bg-amber-950/15', headTint:'bg-amber-50/80 dark:bg-amber-950/25',
+            bar:'bg-amber-500', pill:'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300',
+            btn:'hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/30' },
+      q4: { verb:'Eliminieren', icon:'trash', accent:'text-zinc-400', dot:'bg-zinc-400',
+            tint:'bg-zinc-50/40 dark:bg-zinc-900/30', headTint:'bg-zinc-100/70 dark:bg-zinc-800/40',
+            bar:'bg-zinc-400', pill:'bg-zinc-200 text-zinc-600 dark:bg-zinc-700/40 dark:text-zinc-300',
+            btn:'hover:text-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-800' },
     };
 
-    const Quadrant = ({ id, title, subtitle, tasks, selectedKw, addTask, ...rest }) => {
+    const renderUrg = (subtitle, accent) =>
+      subtitle.split(/(&)|(Wichtig)|(Nicht wichtig)|(Dringend)|(Nicht dringend)/g).filter(Boolean).map((w, i) => {
+        if (w === '&') return <span key={i} className="text-neutral-300 dark:text-neutral-600 mx-1 font-normal">·</span>;
+        if (w === 'Wichtig' || w === 'Dringend') return <span key={i} className={accent}>{w}</span>;
+        if (w === 'Nicht wichtig' || w === 'Nicht dringend') return <span key={i} className="text-neutral-400 dark:text-neutral-500">{w}</span>;
+        return <span key={i}>{w}</span>;
+      });
+
+    const Quadrant = ({ id, subtitle, tasks, selectedKw, currentKw, addTask, ...rest }) => {
       const [input, setInput] = useState('');
       const [dropOver, setDropOver] = useState(false);
       const [focused, setFocused] = useState(false);
       const fileRef = useRef(null);
       const s = Q_STYLE[id];
       const done = tasks.filter(t=>t.endKw!==null).length;
+      const pct = tasks.length ? done / tasks.length : 0;
 
       const doAdd = () => { if(input.trim()){ addTask(id,input); setInput(''); } };
-
-      // Clipboard paste (Strg+V) when this quadrant's input is focused
       const handlePaste = async (e) => {
-        const items = e.clipboardData?.items;
-        if (!items) return;
+        const items = e.clipboardData?.items; if (!items) return;
         for (const item of items) {
           if (item.type.startsWith('image/')) {
             e.preventDefault();
@@ -448,17 +491,12 @@
           }
         }
       };
-
       const handleDrop = async (e) => {
         e.preventDefault(); setDropOver(false);
-        try {
-          const d = JSON.parse(e.dataTransfer.getData('application/json'));
-          if(d.type==='task'){ rest.moveTask(d.id, id); return; }
-        } catch {}
+        try { const d = JSON.parse(e.dataTransfer.getData('application/json')); if(d.type==='task'){ rest.moveTask(d.id, id); return; } } catch {}
         const file = e.dataTransfer.files[0];
         if(file?.type.startsWith('image/')) addTask(id, '', await resizeImage(file));
       };
-
       const handleFile = async (e) => {
         const file = e.target.files[0];
         if(file?.type.startsWith('image/')){ addTask(id, input, await resizeImage(file)); setInput(''); }
@@ -470,59 +508,50 @@
           onDragOver={e=>{ e.preventDefault(); setDropOver(true); }}
           onDragLeave={e=>{ if(!e.currentTarget.contains(e.relatedTarget)) setDropOver(false); }}
           onDrop={handleDrop}
-          className={`flex flex-col rounded-2xl border-t-4 ${s.border} bg-neutral-50 dark:bg-neutral-900/80 shadow-sm overflow-hidden transition-all
-            ${dropOver ? 'ring-2 ring-blue-400 ring-offset-1 shadow-md' : ''}`}
+          className={`relative flex flex-col rounded-2xl overflow-hidden card-shadow transition-all border border-neutral-200/70 dark:border-neutral-800 ${s.tint}
+            ${dropOver ? 'ring-2 ring-blue-400 ring-offset-2 ring-offset-neutral-100 dark:ring-offset-neutral-950' : ''}`}
         >
+          {/* accent bar */}
+          <div className={`absolute left-0 top-0 bottom-0 w-1 ${s.bar}`}/>
+
           {/* Header */}
-          <div className="px-4 pt-3.5 pb-3 bg-white dark:bg-neutral-900 border-b border-neutral-100 dark:border-neutral-800 flex items-start justify-between gap-2 shrink-0">
+          <div className={`pl-5 pr-3 pt-3.5 pb-3 ${s.headTint} border-b border-neutral-200/60 dark:border-neutral-800 flex items-start justify-between gap-2 shrink-0`}>
             <div className="min-w-0">
-              <p className="text-base font-semibold leading-tight mb-1.5">
-                {subtitle.split(/(&)|(Wichtig)|(Nicht wichtig)|(Dringend)|(Nicht dringend)/g).filter(Boolean).map((word, i) => {
-                  if (word === '&') return <span key={i} className="text-neutral-400 dark:text-neutral-500 mx-1">&</span>;
-                  if (word === 'Wichtig') return <span key={i} className={`${s.accent}`}>Wichtig</span>;
-                  if (word === 'Nicht wichtig') return <span key={i} className="text-neutral-400 dark:text-neutral-500">Nicht wichtig</span>;
-                  if (word === 'Dringend') return <span key={i} className={`${s.accent}`}>Dringend</span>;
-                  if (word === 'Nicht dringend') return <span key={i} className="text-neutral-400 dark:text-neutral-500">Nicht dringend</span>;
-                  return <span key={i}>{word}</span>;
-                })}
-              </p>
-              <h2 className="text-xs font-medium text-neutral-400 dark:text-neutral-500 uppercase tracking-wider">{title}</h2>
+              <p className="font-display text-[17px] font-semibold leading-tight">{renderUrg(subtitle, s.accent)}</p>
+              <div className="flex items-center gap-1.5 mt-1.5">
+                <span className={`inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-md ${s.pill}`}>
+                  <Ic n={s.icon} size={11}/> {s.verb}
+                </span>
+              </div>
             </div>
             {tasks.length > 0 && (
-              <span className={`shrink-0 text-xs font-semibold px-2 py-0.5 rounded-full ${s.badge}`}>
-                {done>0 ? `${done}/${tasks.length}` : tasks.length}
-              </span>
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 tabular-nums">{done}/{tasks.length}</span>
+                <Ring pct={pct} size={30} stroke={3}/>
+              </div>
             )}
           </div>
 
           {/* Task list */}
-          <div className="flex-1 p-3 space-y-2 overflow-y-auto">
+          <div className="flex-1 p-3 pl-4 space-y-2 overflow-y-auto min-h-0">
             {tasks.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-10 text-neutral-300 dark:text-neutral-700 gap-2">
-                <Ic n="target" size={26}/>
-                <p className="text-xs text-center leading-relaxed opacity-80">Keine Aufgaben<br/>Drag & Drop oder unten eingeben</p>
-              </div>
+              <label className="flex flex-col items-center justify-center h-full min-h-[120px] text-neutral-300 dark:text-neutral-700 gap-2 cursor-pointer hover:text-neutral-400 dark:hover:text-neutral-600 transition-colors" onClick={()=>fileRef.current?.click()}>
+                <Ic n={s.icon} size={28} sw={1.5}/>
+                <p className="text-xs text-center leading-relaxed">Noch nichts hier.<br/>Tippen, ziehen oder einfügen.</p>
+              </label>
             ) : tasks.map(t => (
-              <TaskItem key={t.id} task={t} isCompleted={t.endKw!==null}
-                addTask={addTask} {...rest}/>
+              <TaskItem key={t.id} task={t} isCompleted={t.endKw!==null} selectedKw={selectedKw} currentKw={currentKw} accentDot={s.dot} addTask={addTask} {...rest}/>
             ))}
           </div>
 
           {/* Input */}
-          <div className="px-3 py-2.5 bg-white dark:bg-neutral-900 border-t border-neutral-100 dark:border-neutral-800 flex items-center gap-1.5 shrink-0">
-            <button onClick={doAdd} className={`p-1 rounded-lg ${s.accent} ${s.btn} transition-colors shrink-0`}>
-              <Ic n="plus" size={16}/>
-            </button>
-            <input value={input} onChange={e=>setInput(e.target.value)}
-              onKeyDown={e=>e.key==='Enter'&&doAdd()}
-              onPaste={handlePaste}
-              onFocus={()=>setFocused(true)}
-              onBlur={()=>setFocused(false)}
-              placeholder={focused ? "Neue Aufgabe… (Bild einfügen mit Strg+V)" : "Neue Aufgabe…"}
+          <div className={`pl-4 pr-3 py-2.5 bg-white/70 dark:bg-neutral-900/60 backdrop-blur-sm border-t border-neutral-200/60 dark:border-neutral-800 flex items-center gap-1.5 shrink-0 transition-colors ${focused ? 'bg-white dark:bg-neutral-900' : ''}`}>
+            <button onClick={doAdd} className={`p-1 rounded-lg ${s.accent} ${s.btn} transition-colors shrink-0`}><Ic n="plus" size={16}/></button>
+            <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&doAdd()} onPaste={handlePaste}
+              onFocus={()=>setFocused(true)} onBlur={()=>setFocused(false)}
+              placeholder={focused ? "Aufgabe… (⏎ · Strg+V für Bild)" : "Neue Aufgabe…"}
               className="flex-1 bg-transparent text-sm text-neutral-700 dark:text-neutral-200 placeholder-neutral-400 dark:placeholder-neutral-600 outline-none min-w-0 py-1"/>
-            <button onClick={()=>fileRef.current?.click()} title="Bild" className={`p-1 rounded-lg text-neutral-400 ${s.btn} transition-colors shrink-0`}>
-              <Ic n="image" size={15}/>
-            </button>
+            <button onClick={()=>fileRef.current?.click()} title="Bild" className={`p-1 rounded-lg text-neutral-400 ${s.btn} transition-colors shrink-0`}><Ic n="image" size={15}/></button>
             <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFile}/>
           </div>
         </div>
@@ -541,31 +570,30 @@
       }, [tasks]);
 
       return (
-        <div className="w-56 bg-white dark:bg-neutral-900 border-l border-neutral-200 dark:border-neutral-800 flex flex-col shrink-0">
+        <div className="w-60 bg-white dark:bg-neutral-900 border-l border-neutral-200 dark:border-neutral-800 flex flex-col shrink-0">
           <div className="px-4 py-3.5 border-b border-neutral-100 dark:border-neutral-800 shrink-0">
-            <p className="text-xs font-semibold text-neutral-600 dark:text-neutral-300">Jahresübersicht</p>
-            <p className="text-xs text-neutral-400 mt-0.5">{new Date().getFullYear()}</p>
+            <p className="font-display text-sm font-semibold text-neutral-700 dark:text-neutral-200">Jahresplan</p>
+            <p className="text-xs text-neutral-400 mt-0.5">{new Date().getFullYear()} · 52 Wochen</p>
           </div>
           <div className="flex-1 overflow-y-auto p-2" ref={scrollRef}>
             {Array.from({length:52},(_,i)=>i+1).map(w => {
               const sel = selectedKw===w, cur = currentKw===w;
               const { total, done } = weekStats[w] || {};
+              const allDone = total > 0 && done === total;
               return (
                 <button key={w} data-kw={w} data-active={sel} onClick={()=>onSelect(w)}
-                  className={`w-full flex items-center justify-between px-3 py-1.5 rounded-xl mb-0.5 text-left transition-all
-                    ${sel ? 'bg-blue-500 text-white shadow-sm' : cur ? 'bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-200' : 'text-neutral-500 dark:text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-800/60 hover:text-neutral-700 dark:hover:text-neutral-300'}`}>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-sm font-medium">KW {w}</span>
-                    {cur && !sel && <span className="w-1.5 h-1.5 rounded-full bg-blue-400"/>}
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    {total > 0 && (
-                      <span className={`text-xs ${sel ? 'text-blue-100' : 'text-neutral-400 dark:text-neutral-600'}`}>
-                        {done>0 ? `${done}/${total}` : total}
-                      </span>
-                    )}
-                    {cur && sel && <span className="text-xs bg-white/20 text-white px-1.5 py-0.5 rounded-full">Jetzt</span>}
-                  </div>
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl mb-0.5 text-left transition-all
+                    ${sel ? 'bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 shadow-sm' : cur ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300' : 'text-neutral-500 dark:text-neutral-400 hover:bg-neutral-50 dark:hover:bg-neutral-800/60'}`}>
+                  <span className={`text-sm font-medium font-display tabular-nums w-12 shrink-0 ${sel?'':''}`}>KW {w}</span>
+                  <span className={`text-[11px] flex-1 truncate ${sel ? 'opacity-70' : 'text-neutral-400 dark:text-neutral-600'}`}>{weekDateRange(w)}</span>
+                  {total > 0 && (
+                    <span className={`text-[11px] font-semibold tabular-nums shrink-0 flex items-center gap-1
+                      ${sel ? 'opacity-90' : allDone ? 'text-emerald-500' : 'text-neutral-400 dark:text-neutral-500'}`}>
+                      {allDone && <Ic n="check" size={11}/>}
+                      {done>0 ? `${done}/${total}` : total}
+                    </span>
+                  )}
+                  {cur && !sel && <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0"/>}
                 </button>
               );
             })}
@@ -586,168 +614,152 @@
       const [toasts, setToasts] = useState([]);
       const scrollRef = useRef(null);
 
-      // Load
       useEffect(() => {
         try { const s = localStorage.getItem('matrix_tasks'); if(s) setTasks(JSON.parse(s)); } catch {}
-        const dm = localStorage.getItem('matrix_dark') === 'true';
-        setDark(dm);
+        setDark(localStorage.getItem('matrix_dark') === 'true');
         setLoaded(true);
       }, []);
-
-      // Persist tasks
       useEffect(() => { if(loaded) localStorage.setItem('matrix_tasks', JSON.stringify(tasks)); }, [tasks, loaded]);
+      useEffect(() => { localStorage.setItem('matrix_dark', dark); document.documentElement.classList.toggle('dark', dark); }, [dark]);
+      useEffect(() => { if(!loaded) return; const el = scrollRef.current?.querySelector(`[data-kw="${currentKw}"]`); if(el) el.scrollIntoView({behavior:'smooth',block:'center'}); }, [loaded]);
 
-      // Dark mode
-      useEffect(() => {
-        localStorage.setItem('matrix_dark', dark);
-        document.documentElement.classList.toggle('dark', dark);
-      }, [dark]);
+      const goToWeek = useCallback((w) => {
+        setSelectedKw(w);
+        requestAnimationFrame(() => scrollRef.current?.querySelector(`[data-kw="${w}"]`)?.scrollIntoView({behavior:'smooth',block:'center'}));
+      }, []);
 
-      // Scroll to current KW on load
-      useEffect(() => {
-        if(!loaded) return;
-        const el = scrollRef.current?.querySelector(`[data-kw="${currentKw}"]`);
-        if(el) el.scrollIntoView({behavior:'smooth',block:'center'});
-      }, [loaded]);
-
-      // Keyboard shortcuts
+      // Keyboard: ⌘K search, arrows for weeks, esc to close
       useEffect(() => {
         const fn = e => {
-          if((e.metaKey||e.ctrlKey) && e.key==='k') { e.preventDefault(); setShowSearch(s=>!s); }
-          if(e.key==='Escape') { setShowSearch(false); setShowBackup(false); }
+          if((e.metaKey||e.ctrlKey) && e.key==='k') { e.preventDefault(); setShowSearch(s=>!s); return; }
+          if(e.key==='Escape') { setShowSearch(false); setShowBackup(false); return; }
+          const typing = /^(INPUT|TEXTAREA)$/.test(e.target.tagName) || e.target.isContentEditable;
+          if(typing) return;
+          if(e.key==='ArrowDown' || e.key==='ArrowRight') { e.preventDefault(); setSelectedKw(w => { const n=Math.min(52,w+1); requestAnimationFrame(()=>scrollRef.current?.querySelector(`[data-kw="${n}"]`)?.scrollIntoView({block:'nearest'})); return n; }); }
+          if(e.key==='ArrowUp' || e.key==='ArrowLeft') { e.preventDefault(); setSelectedKw(w => { const n=Math.max(1,w-1); requestAnimationFrame(()=>scrollRef.current?.querySelector(`[data-kw="${n}"]`)?.scrollIntoView({block:'nearest'})); return n; }); }
         };
         window.addEventListener('keydown', fn);
         return () => window.removeEventListener('keydown', fn);
       }, []);
 
       const addToast = useCallback(({ message, type='default', action, actionLabel }) => {
-        const id = Date.now();
+        const id = Date.now() + Math.random();
         setToasts(t => [...t, {id, message, type, action, actionLabel}]);
         setTimeout(() => setToasts(t => t.filter(x=>x.id!==id)), 4500);
       }, []);
       const dismissToast = useCallback(id => setToasts(t=>t.filter(x=>x.id!==id)), []);
 
-      // Task ops
       const addTask = (quadrant, text, image=null) => {
         if(!text.trim() && !image) return;
-        setTasks(prev => [...prev, { id:Date.now().toString(), text:text.trim()||'Bildaufgabe', image, notes:'', quadrant, startKw:selectedKw, endKw:null }]);
+        setTasks(prev => [...prev, { id:Date.now().toString()+Math.random().toString(36).slice(2,6), text:text.trim()||'Bildaufgabe', image, notes:'', quadrant, startKw:selectedKw, endKw:null }]);
       };
-
       const editTask = (id, newText, restore=null) => {
         if(restore) { setTasks(prev => [...prev, restore]); return; }
         setTasks(prev => prev.map(t => t.id===id ? {...t, text:newText} : t));
       };
-
       const updateNotes = (id, notes) => setTasks(prev => prev.map(t => t.id===id ? {...t, notes} : t));
       const attachImageToTask = (id, img) => setTasks(prev => prev.map(t => t.id===id ? {...t,image:img} : t));
       const removeImage = (id) => setTasks(prev => prev.map(t => t.id===id ? {...t,image:null} : t));
       const toggleTask = (id) => setTasks(prev => prev.map(t => t.id!==id ? t : t.endKw!==null ? {...t,endKw:null} : {...t,endKw:selectedKw}));
       const deleteTask = (id) => setTasks(prev => prev.filter(t => t.id!==id));
       const moveTask = (taskId, qId) => setTasks(prev => prev.map(t => t.id===taskId ? {...t,quadrant:qId} : t));
+      const getQ = (qId) => tasks.filter(t => t.quadrant===qId && t.startKw<=selectedKw && (t.endKw===null || t.endKw>=selectedKw));
 
-      const getQ = (qId) => tasks.filter(t =>
-        t.quadrant===qId && t.startKw<=selectedKw && (t.endKw===null || t.endKw>=selectedKw)
-      );
-
-      // Stats
       const weekTasks = tasks.filter(t => t.startKw<=selectedKw && (t.endKw===null||t.endKw>=selectedKw));
       const doneCount = tasks.filter(t=>t.endKw===selectedKw).length;
       const openCount = weekTasks.length - doneCount;
+      const weekPct = weekTasks.length ? doneCount / weekTasks.length : 0;
 
       const taskProps = { toggleTask, deleteTask, attachImageToTask, removeImage, moveTask, editTask, updateNotes, addToast };
-
       const QUADS = [
-        {id:'q1', title:'Sofort erledigen',  subtitle:'Wichtig & Dringend'},
-        {id:'q2', title:'Einplanen',          subtitle:'Wichtig & Nicht dringend'},
-        {id:'q3', title:'Delegieren',         subtitle:'Nicht wichtig & Dringend'},
-        {id:'q4', title:'Eliminieren',        subtitle:'Nicht wichtig & Nicht dringend'},
+        {id:'q1', subtitle:'Wichtig & Dringend'},
+        {id:'q2', subtitle:'Wichtig & Nicht dringend'},
+        {id:'q3', subtitle:'Nicht wichtig & Dringend'},
+        {id:'q4', subtitle:'Nicht wichtig & Nicht dringend'},
       ];
 
+      const btnGhost = "p-2 text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-xl transition-colors";
+
       return (
-        <div className="flex h-screen bg-neutral-100 dark:bg-neutral-950 font-sans overflow-hidden">
+        <div className="flex h-screen bg-neutral-100 dark:bg-neutral-950 overflow-hidden text-neutral-800 dark:text-neutral-100">
           <div className="flex-1 flex flex-col overflow-hidden">
 
             {/* Header */}
-            <header className="shrink-0 bg-white dark:bg-neutral-900 border-b border-neutral-200 dark:border-neutral-800 px-5 py-3 flex items-center gap-3 z-20">
-              {/* Logo */}
-              <div className="flex items-center gap-2 shrink-0">
-                <div className="w-7 h-7 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-sm">
-                  <Ic n="target" size={14} cls="text-white"/>
-                </div>
-                <span className="font-bold text-neutral-800 dark:text-neutral-100 tracking-tight">PrioMatrix</span>
+            <header className="shrink-0 bg-white/80 dark:bg-neutral-900/80 backdrop-blur-md border-b border-neutral-200 dark:border-neutral-800 px-5 py-2.5 flex items-center gap-3 z-20">
+              <div className="flex items-center gap-2.5 shrink-0">
+                <Logo size={28}/>
+                <span className="font-display font-bold text-lg tracking-tight text-neutral-900 dark:text-white">Prio<span className="text-blue-500">Matrix</span></span>
               </div>
 
-              <div className="w-px h-5 bg-neutral-200 dark:bg-neutral-700 shrink-0"/>
+              <div className="w-px h-6 bg-neutral-200 dark:bg-neutral-700 shrink-0"/>
 
-              {/* Week info */}
-              <div className="flex items-center gap-2 text-sm text-neutral-500 dark:text-neutral-400 shrink-0">
-                <Ic n="cal" size={14}/>
-                <span className="font-semibold text-neutral-700 dark:text-neutral-200">KW {selectedKw}</span>
-                {selectedKw===currentKw && <span className="text-xs px-2 py-0.5 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-full font-medium">Aktuell</span>}
-              </div>
+              <button onClick={()=>goToWeek(currentKw)} className="flex items-center gap-2 shrink-0 group" title="Zur aktuellen Woche">
+                <Ic n="cal" size={15} cls="text-neutral-400"/>
+                <span className="font-display font-semibold text-neutral-800 dark:text-neutral-100">KW {selectedKw}</span>
+                <span className="text-xs text-neutral-400 hidden md:inline">{weekDateRange(selectedKw)}</span>
+                {selectedKw===currentKw
+                  ? <span className="text-[11px] px-2 py-0.5 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-full font-medium">Aktuell</span>
+                  : <span className="text-[11px] px-2 py-0.5 bg-neutral-100 dark:bg-neutral-800 text-neutral-500 rounded-full font-medium group-hover:bg-neutral-200 dark:group-hover:bg-neutral-700 transition-colors">→ KW {currentKw}</span>}
+              </button>
 
               <div className="flex-1"/>
 
-              {/* Stats */}
               {weekTasks.length > 0 && (
-                <div className="hidden sm:flex items-center gap-3 text-xs mr-2">
-                  <span className="text-neutral-400">{weekTasks.length} Aufgaben</span>
-                  {openCount>0 && <span className="font-medium text-neutral-600 dark:text-neutral-300">{openCount} offen</span>}
-                  {doneCount>0 && <span className="font-medium text-emerald-600 dark:text-emerald-400">{doneCount} erledigt</span>}
+                <div className="hidden sm:flex items-center gap-3 mr-1">
+                  <div className="text-right">
+                    <p className="text-xs leading-tight">
+                      <span className="font-semibold text-neutral-700 dark:text-neutral-200 tabular-nums">{openCount}</span>
+                      <span className="text-neutral-400"> offen</span>
+                      {doneCount>0 && <span className="text-emerald-600 dark:text-emerald-400 font-medium tabular-nums"> · {doneCount} erledigt</span>}
+                    </p>
+                    <p className="text-[10px] text-neutral-400 uppercase tracking-wider">Woche {selectedKw}</p>
+                  </div>
+                  <Ring pct={weekPct} size={38}/>
                 </div>
               )}
 
-              {/* Actions */}
               <div className="flex items-center gap-1">
-                <button onClick={()=>setShowSearch(true)} title="Suchen (Strg+K)"
+                <button onClick={()=>setShowSearch(true)} title="Suchen (⌘K)"
                   className="flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-xl transition-colors">
                   <Ic n="search" size={15}/>
-                  <span className="hidden md:inline text-xs">Suchen</span>
-                  <kbd className="hidden md:inline text-xs bg-neutral-100 dark:bg-neutral-800 px-1.5 py-0.5 rounded-lg font-mono text-neutral-400">⌘K</kbd>
+                  <kbd className="hidden md:inline text-[11px] bg-neutral-100 dark:bg-neutral-800 px-1.5 py-0.5 rounded-md font-mono text-neutral-400">⌘K</kbd>
                 </button>
-
-                {selectedKw!==currentKw && (
-                  <button onClick={()=>{ setSelectedKw(currentKw); scrollRef.current?.querySelector(`[data-kw="${currentKw}"]`)?.scrollIntoView({behavior:'smooth',block:'center'}); }}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/40 rounded-xl transition-colors font-medium">
-                    <Ic n="arrow" size={13}/> KW {currentKw}
-                  </button>
-                )}
-
-                <button onClick={()=>setShowBackup(true)} title="Backup & Daten"
-                  className="p-2 text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-xl transition-colors">
-                  <Ic n="db" size={15}/>
-                </button>
-
-                <button onClick={()=>setDark(d=>!d)} title={dark?'Heller Modus':'Dunkler Modus'}
-                  className="p-2 text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-xl transition-colors">
-                  <Ic n={dark?'sun':'moon'} size={15}/>
-                </button>
+                <button onClick={()=>setShowBackup(true)} title="Backup & Daten" className={btnGhost}><Ic n="db" size={15}/></button>
+                <button onClick={()=>setDark(d=>!d)} title={dark?'Heller Modus':'Dunkler Modus'} className={btnGhost}><Ic n={dark?'sun':'moon'} size={15}/></button>
               </div>
             </header>
 
-            {/* Matrix grid */}
-            <main className="flex-1 overflow-y-auto p-4">
-              <div className="grid grid-cols-2 gap-4 h-full min-h-[480px]">
-                {QUADS.map(q => (
-                  <Quadrant key={q.id} id={q.id} title={q.title} subtitle={q.subtitle}
-                    tasks={getQ(q.id)} selectedKw={selectedKw} addTask={addTask} {...taskProps}/>
-                ))}
+            {/* Matrix + axes */}
+            <main className="flex-1 overflow-hidden dot-grid p-4">
+              <div className="h-full flex gap-2">
+                {/* Vertical axis: Wichtigkeit */}
+                <div className="hidden md:flex flex-col items-center justify-between py-1 shrink-0 w-6 text-[10px] font-semibold uppercase tracking-widest text-neutral-400 dark:text-neutral-600">
+                  <div className="flex items-center gap-1 text-rose-400 dark:text-rose-500"><Ic n="chevUp" size={12}/></div>
+                  <span className="vert-text font-display tracking-[0.25em] text-neutral-500 dark:text-neutral-400">WICHTIGKEIT</span>
+                  <div className="h-4"/>
+                </div>
+
+                <div className="flex-1 flex flex-col gap-2 min-w-0">
+                  {/* Horizontal axis: Dringlichkeit */}
+                  <div className="hidden md:flex items-center justify-center gap-2 shrink-0 text-[10px] font-semibold uppercase tracking-widest text-neutral-400 dark:text-neutral-600">
+                    <span className="font-display tracking-[0.25em] text-neutral-500 dark:text-neutral-400">DRINGLICHKEIT</span>
+                    <Ic n="arrowRight" size={12} cls="text-rose-400 dark:text-rose-500"/>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 flex-1 min-h-0">
+                    {QUADS.map(q => (
+                      <Quadrant key={q.id} id={q.id} subtitle={q.subtitle} tasks={getQ(q.id)} selectedKw={selectedKw} currentKw={currentKw} addTask={addTask} {...taskProps}/>
+                    ))}
+                  </div>
+                </div>
               </div>
             </main>
           </div>
 
-          {/* Sidebar */}
-          <WeekSidebar selectedKw={selectedKw} currentKw={currentKw} tasks={tasks} onSelect={setSelectedKw} scrollRef={scrollRef}/>
+          <WeekSidebar selectedKw={selectedKw} currentKw={currentKw} tasks={tasks} onSelect={goToWeek} scrollRef={scrollRef}/>
 
-          {/* Overlays */}
-          {showSearch && (
-            <SearchOverlay tasks={tasks} onClose={()=>setShowSearch(false)}
-              onJump={t=>{ setSelectedKw(t.startKw); setShowSearch(false); }}/>
-          )}
-          {showBackup && (
-            <BackupPanel tasks={tasks} onImport={setTasks} onClose={()=>setShowBackup(false)} addToast={addToast}/>
-          )}
-
+          {showSearch && <SearchOverlay tasks={tasks} onClose={()=>setShowSearch(false)} onJump={t=>{ goToWeek(t.startKw); setShowSearch(false); }}/>}
+          {showBackup && <BackupPanel tasks={tasks} onImport={setTasks} onClose={()=>setShowBackup(false)} addToast={addToast}/>}
           <Toast toasts={toasts} dismiss={dismissToast}/>
         </div>
       );
