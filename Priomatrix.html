@@ -629,6 +629,117 @@
       );
     };
 
+    // ── Kanban ─────────────────────────────────────────────────────
+    const KANBAN_COLS = [
+      { key:'todo',  label:'To Do', icon:'circle', head:'text-neutral-500 dark:text-neutral-400', tint:'bg-neutral-50/60 dark:bg-neutral-900/40' },
+      { key:'doing', label:'Doing', icon:'bolt',    head:'text-blue-500',                          tint:'bg-blue-50/40 dark:bg-blue-950/15' },
+      { key:'done',  label:'Done',  icon:'check',   head:'text-emerald-500',                        tint:'bg-emerald-50/40 dark:bg-emerald-950/15' },
+    ];
+    const QUAD_META = {
+      q1: { label:'Q1', full:'Erledigen',  dot:'bg-rose-500',  text:'text-rose-600 dark:text-rose-400' },
+      q2: { label:'Q2', full:'Einplanen',  dot:'bg-blue-500',  text:'text-blue-600 dark:text-blue-400' },
+      q3: { label:'Q3', full:'Delegieren', dot:'bg-amber-500', text:'text-amber-600 dark:text-amber-400' },
+      q4: { label:'Q4', full:'Eliminieren',dot:'bg-zinc-400',  text:'text-zinc-500 dark:text-zinc-400' },
+    };
+    const kanbanStatusOf = (t, selectedKw) => (t.endKw!==null && t.endKw<=selectedKw) ? 'done' : (t.status==='doing' ? 'doing' : 'todo');
+
+    const KanbanCard = ({ task, onOpenNotes, deleteTask, restoreTask, addToast }) => {
+      const [lightbox, setLightbox] = useState(false);
+      const meta = QUAD_META[task.quadrant];
+      const handleDelete = (e) => {
+        e.stopPropagation();
+        const snap = { ...task };
+        deleteTask(task.id);
+        addToast({ message:'Aufgabe gelöscht', action:()=>restoreTask(snap) });
+      };
+      return (
+        <>
+          <div draggable
+            onDragStart={e=>e.dataTransfer.setData('application/json', JSON.stringify({type:'kanbanTask', id:task.id}))}
+            className="group bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-xl p-2.5 cursor-grab active:cursor-grabbing hover:shadow-md hover:-translate-y-px transition-all anim-slide">
+            <div className="flex items-center gap-1.5 mb-1">
+              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${meta.dot}`}/>
+              <span className={`text-[10px] font-bold uppercase tracking-wide ${meta.text}`}>{meta.label}</span>
+              <div className="flex-1"/>
+              <button onClick={()=>onOpenNotes(task)} title="Notiz" className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-neutral-400 hover:text-blue-500 transition-all"><Ic n="note" size={11}/></button>
+              <button onClick={handleDelete} title="Löschen" className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-neutral-400 hover:text-rose-500 transition-all"><Ic n="trash" size={11}/></button>
+            </div>
+            <p className="text-sm text-neutral-700 dark:text-neutral-200 leading-snug break-words">{task.text}</p>
+            {task.notes && <p className="text-xs text-neutral-400 mt-1 line-clamp-2">{task.notes}</p>}
+            {task.image && (
+              <img src={task.image} onClick={()=>setLightbox(true)} alt=""
+                className="mt-2 max-h-24 rounded-lg border border-neutral-200 dark:border-neutral-700 object-contain cursor-zoom-in hover:opacity-90 transition-opacity"/>
+            )}
+          </div>
+          {lightbox && task.image && <Lightbox src={task.image} onClose={()=>setLightbox(false)}/>}
+        </>
+      );
+    };
+
+    const KanbanBoard = ({ tasks, selectedKw, setKanbanStatus, deleteTask, restoreTask, addToast, updateNotes }) => {
+      const [dragOverCol, setDragOverCol] = useState(null);
+      const [notesTask, setNotesTask] = useState(null);
+
+      const weekTasks = useMemo(() => tasks.filter(t => t.startKw<=selectedKw && (t.endKw===null||t.endKw>=selectedKw)), [tasks, selectedKw]);
+      const columns = useMemo(() => {
+        const map = { todo:[], doing:[], done:[] };
+        for (const t of weekTasks) map[kanbanStatusOf(t, selectedKw)].push(t);
+        return map;
+      }, [weekTasks, selectedKw]);
+
+      const handleDrop = (colKey) => (e) => {
+        e.preventDefault(); setDragOverCol(null);
+        try {
+          const d = JSON.parse(e.dataTransfer.getData('application/json'));
+          if (d.type === 'kanbanTask') setKanbanStatus(d.id, colKey);
+        } catch {}
+      };
+
+      return (
+        <div className="h-full grid grid-cols-3 gap-3">
+          {KANBAN_COLS.map(col => {
+            const list = columns[col.key];
+            return (
+              <div key={col.key}
+                onDragOver={e=>{ e.preventDefault(); setDragOverCol(col.key); }}
+                onDragLeave={e=>{ if(!e.currentTarget.contains(e.relatedTarget)) setDragOverCol(null); }}
+                onDrop={handleDrop(col.key)}
+                className={`flex flex-col rounded-2xl border overflow-hidden card-shadow transition-all ${col.tint} border-neutral-200/70 dark:border-neutral-800
+                  ${dragOverCol===col.key ? 'ring-2 ring-blue-400 ring-offset-2 ring-offset-neutral-100 dark:ring-offset-neutral-950' : ''}`}>
+                <div className="px-4 py-3 bg-white/70 dark:bg-neutral-900/60 backdrop-blur-sm border-b border-neutral-200/60 dark:border-neutral-800 flex items-center justify-between shrink-0">
+                  <div className="flex items-center gap-2">
+                    <Ic n={col.icon} size={14} cls={col.head}/>
+                    <h3 className={`font-display font-semibold text-sm ${col.head}`}>{col.label}</h3>
+                  </div>
+                  <span className="text-xs font-semibold text-neutral-400 tabular-nums">{list.length}</span>
+                </div>
+                <div className="flex-1 overflow-y-auto p-3 space-y-4 min-h-0">
+                  {list.length === 0 ? (
+                    <p className="text-xs text-neutral-300 dark:text-neutral-700 text-center py-10">Leer</p>
+                  ) : ['q1','q2','q3','q4'].map(q => {
+                    const qList = list.filter(t=>t.quadrant===q);
+                    if (!qList.length) return null;
+                    const meta = QUAD_META[q];
+                    return (
+                      <div key={q}>
+                        <p className={`text-[10px] font-bold uppercase tracking-widest mb-1.5 flex items-center gap-1.5 ${meta.text}`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${meta.dot}`}/>{meta.full}
+                        </p>
+                        <div className="space-y-2">
+                          {qList.map(t => <KanbanCard key={t.id} task={t} onOpenNotes={setNotesTask} deleteTask={deleteTask} restoreTask={restoreTask} addToast={addToast}/>)}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+          {notesTask && <NotesModal task={notesTask} onSave={n=>updateNotes(notesTask.id,n)} onClose={()=>setNotesTask(null)}/>}
+        </div>
+      );
+    };
+
     // ── App ────────────────────────────────────────────────────────
     function App() {
       const currentKw = getISOWeek(new Date());
@@ -636,6 +747,7 @@
       const [tasks, setTasks] = useState([]);
       const [loaded, setLoaded] = useState(false);
       const [dark, setDark] = useState(false);
+      const [view, setView] = useState('matrix');
       const [showSearch, setShowSearch] = useState(false);
       const [showBackup, setShowBackup] = useState(false);
       const [toasts, setToasts] = useState([]);
@@ -678,7 +790,7 @@
 
       const addTask = (quadrant, text, image=null) => {
         if(!text.trim() && !image) return;
-        setTasks(prev => [...prev, { id:Date.now().toString()+Math.random().toString(36).slice(2,6), text:text.trim()||'Bildaufgabe', image, notes:'', quadrant, startKw:selectedKw, endKw:null }]);
+        setTasks(prev => [...prev, { id:Date.now().toString()+Math.random().toString(36).slice(2,6), text:text.trim()||'Bildaufgabe', image, notes:'', quadrant, status:'todo', startKw:selectedKw, endKw:null }]);
       };
       const editTask = (id, newText) => setTasks(prev => prev.map(t => t.id===id ? {...t, text:newText} : t));
       const restoreTask = (snap) => setTasks(prev => [...prev, snap]);
@@ -711,6 +823,13 @@
         setTasks(prev => prev.map(t => t.id===id ? {...t, startKw: target} : t));
         addToast({ message:`Auf KW ${target} verschoben`, action:()=>setTasks(prev => prev.map(t => t.id===id ? {...t, startKw: orig} : t)) });
       };
+      // Kanban: move a task between To Do / Doing / Done for the selected week.
+      // Done syncs with the Matrix completion (endKw); leaving Done re-opens the task.
+      const setKanbanStatus = (id, target) => setTasks(prev => prev.map(t => {
+        if (t.id !== id) return t;
+        if (target === 'done') return { ...t, endKw: selectedKw, status: 'done' };
+        return { ...t, endKw: null, status: target };
+      }));
       const getQ = (qId) => tasks
         .filter(t => t.quadrant===qId && t.startKw<=selectedKw && (t.endKw===null || t.endKw>=selectedKw))
         .map((t, i) => ({ t, i }))
@@ -758,6 +877,18 @@
                   : <span className="text-[11px] px-2 py-0.5 bg-neutral-100 dark:bg-neutral-800 text-neutral-500 rounded-full font-medium group-hover:bg-neutral-200 dark:group-hover:bg-neutral-700 transition-colors">→ KW {currentKw}</span>}
               </button>
 
+              <div className="w-px h-6 bg-neutral-200 dark:bg-neutral-700 shrink-0"/>
+
+              <div className="flex items-center gap-0.5 bg-neutral-100 dark:bg-neutral-800 rounded-xl p-0.5 shrink-0">
+                {[{k:'matrix',l:'Matrix'},{k:'kanban',l:'Kanban'}].map(tab => (
+                  <button key={tab.k} onClick={()=>setView(tab.k)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-[10px] text-sm font-medium transition-all
+                      ${view===tab.k ? 'bg-white dark:bg-neutral-700 text-neutral-800 dark:text-neutral-100 shadow-sm' : 'text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200'}`}>
+                    {tab.l}
+                  </button>
+                ))}
+              </div>
+
               <div className="flex-1"/>
 
               {weekTasks.length > 0 && (
@@ -785,30 +916,35 @@
               </div>
             </header>
 
-            {/* Matrix + axes */}
+            {/* Matrix + axes, or Kanban */}
             <main className="flex-1 overflow-hidden dot-grid p-4">
-              <div className="h-full flex gap-2">
-                {/* Vertical axis: Wichtigkeit */}
-                <div className="hidden md:flex flex-col items-center justify-between py-1 shrink-0 w-6 text-[10px] font-semibold uppercase tracking-widest text-neutral-400 dark:text-neutral-600">
-                  <div className="flex items-center gap-1 text-rose-400 dark:text-rose-500"><Ic n="chevUp" size={12}/></div>
-                  <span className="vert-text font-display tracking-[0.25em] text-neutral-500 dark:text-neutral-400">WICHTIGKEIT</span>
-                  <div className="h-4"/>
-                </div>
-
-                <div className="flex-1 flex flex-col gap-2 min-w-0">
-                  {/* Horizontal axis: Dringlichkeit */}
-                  <div className="hidden md:flex items-center justify-center gap-2 shrink-0 text-[10px] font-semibold uppercase tracking-widest text-neutral-400 dark:text-neutral-600">
-                    <span className="font-display tracking-[0.25em] text-neutral-500 dark:text-neutral-400">DRINGLICHKEIT</span>
-                    <Ic n="arrowRight" size={12} cls="text-rose-400 dark:text-rose-500"/>
+              {view === 'matrix' ? (
+                <div className="h-full flex gap-2">
+                  {/* Vertical axis: Wichtigkeit */}
+                  <div className="hidden md:flex flex-col items-center justify-between py-1 shrink-0 w-6 text-[10px] font-semibold uppercase tracking-widest text-neutral-400 dark:text-neutral-600">
+                    <div className="flex items-center gap-1 text-rose-400 dark:text-rose-500"><Ic n="chevUp" size={12}/></div>
+                    <span className="vert-text font-display tracking-[0.25em] text-neutral-500 dark:text-neutral-400">WICHTIGKEIT</span>
+                    <div className="h-4"/>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3 flex-1 min-h-0">
-                    {QUADS.map(q => (
-                      <Quadrant key={q.id} id={q.id} subtitle={q.subtitle} tasks={getQ(q.id)} selectedKw={selectedKw} currentKw={currentKw} addTask={addTask} {...taskProps}/>
-                    ))}
+                  <div className="flex-1 flex flex-col gap-2 min-w-0">
+                    {/* Horizontal axis: Dringlichkeit */}
+                    <div className="hidden md:flex items-center justify-center gap-2 shrink-0 text-[10px] font-semibold uppercase tracking-widest text-neutral-400 dark:text-neutral-600">
+                      <span className="font-display tracking-[0.25em] text-neutral-500 dark:text-neutral-400">DRINGLICHKEIT</span>
+                      <Ic n="arrowRight" size={12} cls="text-rose-400 dark:text-rose-500"/>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3 flex-1 min-h-0">
+                      {QUADS.map(q => (
+                        <Quadrant key={q.id} id={q.id} subtitle={q.subtitle} tasks={getQ(q.id)} selectedKw={selectedKw} currentKw={currentKw} addTask={addTask} {...taskProps}/>
+                      ))}
+                    </div>
                   </div>
                 </div>
-              </div>
+              ) : (
+                <KanbanBoard tasks={tasks} selectedKw={selectedKw} setKanbanStatus={setKanbanStatus}
+                  deleteTask={deleteTask} restoreTask={restoreTask} addToast={addToast} updateNotes={updateNotes}/>
+              )}
             </main>
           </div>
 
