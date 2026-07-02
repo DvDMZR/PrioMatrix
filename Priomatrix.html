@@ -711,7 +711,15 @@
         setTasks(prev => prev.map(t => t.id===id ? {...t, startKw: target} : t));
         addToast({ message:`Auf KW ${target} verschoben`, action:()=>setTasks(prev => prev.map(t => t.id===id ? {...t, startKw: orig} : t)) });
       };
-      const getQ = (qId) => tasks.filter(t => t.quadrant===qId && t.startKw<=selectedKw && (t.endKw===null || t.endKw>=selectedKw));
+      const getQ = (qId) => tasks
+        .filter(t => t.quadrant===qId && t.startKw<=selectedKw && (t.endKw===null || t.endKw>=selectedKw))
+        .map((t, i) => ({ t, i }))
+        .sort((a, b) => {
+          const doneA = a.t.endKw!==null && a.t.endKw<=selectedKw ? 1 : 0;
+          const doneB = b.t.endKw!==null && b.t.endKw<=selectedKw ? 1 : 0;
+          return doneA - doneB || a.i - b.i;
+        })
+        .map(({ t }) => t);
 
       const weekTasks = tasks.filter(t => t.startKw<=selectedKw && (t.endKw===null||t.endKw>=selectedKw));
       const doneCount = tasks.filter(t=>t.endKw===selectedKw).length;
