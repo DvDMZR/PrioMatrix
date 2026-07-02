@@ -252,9 +252,28 @@
     };
 
     // ── Backup Panel ───────────────────────────────────────────────
-    const BackupPanel = ({ tasks, onImport, onClose, addToast }) => {
+    const BackupPanel = ({ tasks, onImport, onClose, addToast, selectedKw }) => {
       const fileRef = useRef(null);
       const sz = storageSize();
+      const doMarkdown = () => {
+        const week = tasks.filter(t => t.startKw<=selectedKw && (t.endKw===null||t.endKw>=selectedKw));
+        const names = { q1:'Wichtig & Dringend — Erledigen', q2:'Wichtig & Nicht dringend — Einplanen', q3:'Nicht wichtig & Dringend — Delegieren', q4:'Nicht wichtig & Nicht dringend — Eliminieren' };
+        let md = `# PrioMatrix — KW ${selectedKw} (${weekDateRange(selectedKw)})\n`;
+        for (const q of ['q1','q2','q3','q4']) {
+          const list = week.filter(t=>t.quadrant===q);
+          if (!list.length) continue;
+          md += `\n## ${names[q]}\n\n`;
+          for (const t of list) {
+            const done = t.endKw!==null && t.endKw<=selectedKw;
+            md += `- [${done?'x':' '}] ${t.text}${t.startKw<selectedKw?` *(seit KW ${t.startKw})*`:''}\n`;
+            if (t.notes) md += t.notes.split('\n').map(l=>`  > ${l}`).join('\n') + '\n';
+          }
+        }
+        const blob = new Blob([md], { type:'text/markdown' });
+        const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: `priomatrix-kw${selectedKw}.md` });
+        a.click(); URL.revokeObjectURL(a.href);
+        addToast({ type:'success', message:`KW ${selectedKw} als Markdown exportiert` });
+      };
       const doExport = () => {
         const payload = { app:'PrioMatrix', version: 2, exportedAt: new Date().toISOString(), tasks };
         const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
@@ -303,6 +322,7 @@
                 <p className="text-xs text-neutral-400 mt-2">{tasks.length} Aufgaben gespeichert</p>
               </div>
               <button onClick={doExport} className="w-full flex items-center gap-3 px-4 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-xl font-medium text-sm transition-colors"><Ic n="dl" size={16}/> Als JSON exportieren</button>
+              <button onClick={doMarkdown} className="w-full flex items-center gap-3 px-4 py-3 bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 rounded-xl font-medium text-sm transition-colors"><Ic n="note" size={16}/> KW {selectedKw} als Markdown</button>
               <button onClick={()=>fileRef.current?.click()} className="w-full flex items-center gap-3 px-4 py-3 bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 rounded-xl font-medium text-sm transition-colors"><Ic n="ul" size={16}/> Backup importieren</button>
               <input ref={fileRef} type="file" accept=".json" className="hidden" onChange={doImport}/>
               {tasks.length > 0 && (
@@ -342,7 +362,7 @@
     };
 
     // ── TaskItem ───────────────────────────────────────────────────
-    const TaskItem = ({ task, isCompleted, accentDot, toggleTask, deleteTask, attachImageToTask, removeImage, editTask, updateNotes, addToast, currentKw, selectedKw }) => {
+    const TaskItem = ({ task, isCompleted, accentDot, toggleTask, deleteTask, attachImageToTask, removeImage, editTask, updateNotes, addToast, currentKw, selectedKw, reorderTask, restoreTask, postponeTask }) => {
       const [dropOver, setDropOver] = useState(false);
       const [dragging, setDragging] = useState(false);
       const [editing, setEditing] = useState(false);
@@ -354,8 +374,12 @@
 
       const handleDrop = async (e) => {
         e.preventDefault(); setDropOver(false);
+        try {
+          const d = JSON.parse(e.dataTransfer.getData('application/json'));
+          if (d.type === 'task' && d.id !== task.id) { e.stopPropagation(); reorderTask(d.id, task.id); return; }
+        } catch {}
         const file = e.dataTransfer.files[0];
-        if (file?.type.startsWith('image/')) attachImageToTask(task.id, await resizeImage(file));
+        if (file?.type.startsWith('image/')) { e.stopPropagation(); attachImageToTask(task.id, await resizeImage(file)); }
       };
       const handleFile = async (e) => {
         const file = e.target.files[0];
@@ -370,7 +394,7 @@
       const handleDelete = () => {
         const snap = { ...task };
         deleteTask(task.id);
-        addToast({ message:'Aufgabe gelöscht', action:()=>editTask(null,null,snap) });
+        addToast({ message:'Aufgabe gelöscht', action:()=>restoreTask(snap) });
       };
 
       return (
@@ -419,6 +443,9 @@
               </div>
 
               <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 shrink-0 transition-opacity">
+                {!isCompleted && selectedKw < 52 && (
+                  <button onClick={()=>postponeTask(task.id)} title="Auf nächste Woche schieben" className="p-1 rounded-lg text-neutral-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/30 transition-colors"><Ic n="arrowRight" size={13}/></button>
+                )}
                 <button onClick={()=>setShowNotes(true)} title="Notiz" className="p-1 rounded-lg text-neutral-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"><Ic n="note" size={13}/></button>
                 <button onClick={()=>fileRef.current?.click()} title="Bild" className="p-1 rounded-lg text-neutral-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"><Ic n="image" size={13}/></button>
                 <button onClick={handleDelete} title="Löschen" className="p-1 rounded-lg text-neutral-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/30 transition-colors"><Ic n="trash" size={13}/></button>
@@ -476,7 +503,7 @@
       const [focused, setFocused] = useState(false);
       const fileRef = useRef(null);
       const s = Q_STYLE[id];
-      const done = tasks.filter(t=>t.endKw!==null).length;
+      const done = tasks.filter(t=>t.endKw!==null && t.endKw<=selectedKw).length;
       const pct = tasks.length ? done / tasks.length : 0;
 
       const doAdd = () => { if(input.trim()){ addTask(id,input); setInput(''); } };
@@ -540,7 +567,7 @@
                 <p className="text-xs text-center leading-relaxed">Noch nichts hier.<br/>Tippen, ziehen oder einfügen.</p>
               </label>
             ) : tasks.map(t => (
-              <TaskItem key={t.id} task={t} isCompleted={t.endKw!==null} selectedKw={selectedKw} currentKw={currentKw} accentDot={s.dot} addTask={addTask} {...rest}/>
+              <TaskItem key={t.id} task={t} isCompleted={t.endKw!==null && t.endKw<=selectedKw} selectedKw={selectedKw} currentKw={currentKw} accentDot={s.dot} addTask={addTask} {...rest}/>
             ))}
           </div>
 
@@ -653,16 +680,37 @@
         if(!text.trim() && !image) return;
         setTasks(prev => [...prev, { id:Date.now().toString()+Math.random().toString(36).slice(2,6), text:text.trim()||'Bildaufgabe', image, notes:'', quadrant, startKw:selectedKw, endKw:null }]);
       };
-      const editTask = (id, newText, restore=null) => {
-        if(restore) { setTasks(prev => [...prev, restore]); return; }
-        setTasks(prev => prev.map(t => t.id===id ? {...t, text:newText} : t));
-      };
+      const editTask = (id, newText) => setTasks(prev => prev.map(t => t.id===id ? {...t, text:newText} : t));
+      const restoreTask = (snap) => setTasks(prev => [...prev, snap]);
       const updateNotes = (id, notes) => setTasks(prev => prev.map(t => t.id===id ? {...t, notes} : t));
       const attachImageToTask = (id, img) => setTasks(prev => prev.map(t => t.id===id ? {...t,image:img} : t));
       const removeImage = (id) => setTasks(prev => prev.map(t => t.id===id ? {...t,image:null} : t));
-      const toggleTask = (id) => setTasks(prev => prev.map(t => t.id!==id ? t : t.endKw!==null ? {...t,endKw:null} : {...t,endKw:selectedKw}));
+      const toggleTask = (id) => setTasks(prev => {
+        const next = prev.map(t => t.id!==id ? t : t.endKw===selectedKw ? {...t,endKw:null} : {...t,endKw:selectedKw});
+        const week = next.filter(t => t.startKw<=selectedKw && (t.endKw===null||t.endKw>=selectedKw));
+        const justCompleted = next.find(t=>t.id===id)?.endKw===selectedKw;
+        if (justCompleted && week.length > 0 && week.every(t=>t.endKw!==null && t.endKw<=selectedKw)) {
+          addToast({ type:'success', message:`🎉 Alle ${week.length} Aufgaben der Woche erledigt!` });
+        }
+        return next;
+      });
       const deleteTask = (id) => setTasks(prev => prev.filter(t => t.id!==id));
       const moveTask = (taskId, qId) => setTasks(prev => prev.map(t => t.id===taskId ? {...t,quadrant:qId} : t));
+      // Insert dragged task before target task (also adopts target's quadrant)
+      const reorderTask = (dragId, targetId) => setTasks(prev => {
+        const drag = prev.find(t=>t.id===dragId);
+        if (!drag || dragId===targetId) return prev;
+        const rest = prev.filter(t=>t.id!==dragId);
+        const idx = rest.findIndex(t=>t.id===targetId);
+        if (idx < 0) return prev;
+        return [...rest.slice(0,idx), {...drag, quadrant: rest[idx].quadrant}, ...rest.slice(idx)];
+      });
+      const postponeTask = (id) => {
+        const orig = tasks.find(t=>t.id===id)?.startKw;
+        const target = Math.min(52, selectedKw+1);
+        setTasks(prev => prev.map(t => t.id===id ? {...t, startKw: target} : t));
+        addToast({ message:`Auf KW ${target} verschoben`, action:()=>setTasks(prev => prev.map(t => t.id===id ? {...t, startKw: orig} : t)) });
+      };
       const getQ = (qId) => tasks.filter(t => t.quadrant===qId && t.startKw<=selectedKw && (t.endKw===null || t.endKw>=selectedKw));
 
       const weekTasks = tasks.filter(t => t.startKw<=selectedKw && (t.endKw===null||t.endKw>=selectedKw));
@@ -670,7 +718,7 @@
       const openCount = weekTasks.length - doneCount;
       const weekPct = weekTasks.length ? doneCount / weekTasks.length : 0;
 
-      const taskProps = { toggleTask, deleteTask, attachImageToTask, removeImage, moveTask, editTask, updateNotes, addToast };
+      const taskProps = { toggleTask, deleteTask, attachImageToTask, removeImage, moveTask, editTask, updateNotes, addToast, reorderTask, restoreTask, postponeTask };
       const QUADS = [
         {id:'q1', subtitle:'Wichtig & Dringend'},
         {id:'q2', subtitle:'Wichtig & Nicht dringend'},
@@ -759,7 +807,7 @@
           <WeekSidebar selectedKw={selectedKw} currentKw={currentKw} tasks={tasks} onSelect={goToWeek} scrollRef={scrollRef}/>
 
           {showSearch && <SearchOverlay tasks={tasks} onClose={()=>setShowSearch(false)} onJump={t=>{ goToWeek(t.startKw); setShowSearch(false); }}/>}
-          {showBackup && <BackupPanel tasks={tasks} onImport={setTasks} onClose={()=>setShowBackup(false)} addToast={addToast}/>}
+          {showBackup && <BackupPanel tasks={tasks} onImport={setTasks} onClose={()=>setShowBackup(false)} addToast={addToast} selectedKw={selectedKw}/>}
           <Toast toasts={toasts} dismiss={dismissToast}/>
         </div>
       );
