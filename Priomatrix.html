@@ -2,7 +2,14 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#ffffff">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="PrioMatrix">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" href="icon-192.png">
+  <link rel="apple-touch-icon" href="icon-192.png">
   <title>PrioMatrix</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -23,7 +30,20 @@
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <style>
-    html, body { font-feature-settings: "cv02","cv03","cv04","cv11"; }
+    html, body { font-feature-settings: "cv02","cv03","cv04","cv11"; height: 100%; overscroll-behavior: none; }
+    .app-root { height: 100vh; height: 100dvh; }
+    .safe-top { padding-top: env(safe-area-inset-top); }
+    .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { scrollbar-width: none; }
+    /* Touch-Geräte: Aktionen immer sichtbar, größere Tippflächen */
+    @media (pointer: coarse) {
+      .act-row { opacity: 1 !important; }
+      .act-row button { padding: 0.5rem !important; }
+      .chk { padding: 0.25rem; margin: -0.25rem; }
+    }
+    /* iOS zoomt bei Eingabefeldern < 16px */
+    @media (max-width: 767px) { input, textarea, select { font-size: 16px !important; } }
     ::-webkit-scrollbar { width: 6px; height: 6px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: rgba(100,100,120,0.18); border-radius: 4px; }
@@ -81,6 +101,12 @@
       arrowRight: "M5 12h14M12 5l7 7-7 7",
       chevUp: "M18 15l-6-6-6 6",
       chevDown: "M6 9l6 6 6-6",
+      tag: ["M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z","M7 7h.01"],
+      bell: ["M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9","M13.73 21a2 2 0 0 1-3.46 0"],
+      alert: ["M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z","M12 9v4M12 17h.01"],
+      chevLeft: "M15 18l-6-6 6-6",
+      chevRight: "M9 18l6-6-6-6",
+      dots: ["M12 12h.01","M19 12h.01","M5 12h.01"],
     };
     const Ic = ({ n, size = 16, cls = "", sw = 2 }) => {
       const d = PATHS[n]; if (!d) return null;
@@ -141,8 +167,62 @@
       reader.readAsDataURL(file);
     });
 
+    // ── Datum (Zieldatum als lokaler 'YYYY-MM-DD'-String) ──────────
+    const pad2 = n => String(n).padStart(2, '0');
+    const dateStr = (d) => `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
+    const todayStr = () => dateStr(new Date());
+    const addDays = (str, n) => { const [y,m,d] = str.split('-').map(Number); return dateStr(new Date(y, m-1, d+n)); };
+    const dayDiff = (a, b) => { const f = s => { const [y,m,d] = s.split('-').map(Number); return Date.UTC(y,m-1,d); }; return Math.round((f(a)-f(b))/86400000); };
+    const WD = ['So','Mo','Di','Mi','Do','Fr','Sa'];
+    const fmtDue = (str) => {
+      const diff = dayDiff(str, todayStr());
+      if (diff === 0) return 'Heute';
+      if (diff === 1) return 'Morgen';
+      if (diff === -1) return 'Gestern';
+      const [y,m,d] = str.split('-').map(Number);
+      const wd = WD[new Date(y, m-1, d).getDay()];
+      return `${wd}, ${d}.${m}.` + (y !== new Date().getFullYear() ? y : '');
+    };
+    // Überfällig = Zieldatum in der Vergangenheit und noch nicht erledigt
+    const isOverdue = (t) => !!t.due && t.endKw === null && t.due < todayStr();
+    const nextMonday = () => { const t = todayStr(); const [y,m,d] = t.split('-').map(Number); const dow = new Date(y,m-1,d).getDay() || 7; return addDays(t, 8 - dow); };
+
+    // Kürzel im Text: "#haushalt" wählt die Kategorie, "!morgen" / "!fr" das Zieldatum
+    const WD_ALIAS = { so:0, sonntag:0, mo:1, montag:1, di:2, dienstag:2, mi:3, mittwoch:3, do:4, donnerstag:4, fr:5, freitag:5, sa:6, samstag:6 };
+    const parseDueWord = (w) => {
+      w = w.toLowerCase();
+      if (w === 'heute') return todayStr();
+      if (w === 'morgen') return addDays(todayStr(), 1);
+      if (w === 'übermorgen' || w === 'uebermorgen') return addDays(todayStr(), 2);
+      if (w in WD_ALIAS) {
+        const t = todayStr(); const [y,m,d] = t.split('-').map(Number);
+        const diff = (WD_ALIAS[w] - new Date(y,m-1,d).getDay() + 7) % 7 || 7;
+        return addDays(t, diff);
+      }
+      return null;
+    };
+    const parseQuick = (raw, categories) => {
+      let cat = null, due = null;
+      const words = raw.split(/\s+/).filter(Boolean).filter(w => {
+        if (w.length > 1 && w[0] === '#') {
+          const q = w.slice(1).toLowerCase();
+          const hit = categories.find(c => c.name.toLowerCase().replace(/\s+/g,'') === q)
+                   || (categories.filter(c => c.name.toLowerCase().startsWith(q)).length === 1 ? categories.find(c => c.name.toLowerCase().startsWith(q)) : null);
+          if (hit) { cat = hit.id; return false; }
+        }
+        if (w.length > 1 && w[0] === '!') { const d = parseDueWord(w.slice(1)); if (d) { due = d; return false; } }
+        return true;
+      });
+      return { text: words.join(' '), cat, due };
+    };
+
+    const CAT_COLORS = ['#f43f5e','#f97316','#f59e0b','#10b981','#14b8a6','#3b82f6','#6366f1','#8b5cf6','#ec4899','#71717a'];
+    const CAT_SUGGEST = ['Haushalt','Gartenarbeit','Einkauf','Arbeit','Familie','Termine'];
+    const newId = () => Date.now().toString() + Math.random().toString(36).slice(2,6);
+    const saveLS = (k, v) => { try { localStorage.setItem(k, typeof v === 'string' ? v : JSON.stringify(v)); } catch {} };
+
     const fmtBytes = (b) => b < 1024 ? b + ' B' : b < 1048576 ? (b/1024).toFixed(1) + ' KB' : (b/1048576).toFixed(2) + ' MB';
-    const storageSize = () => { try { return new Blob([localStorage.getItem('matrix_tasks')||'']).size; } catch { return 0; } };
+    const storageSize = () => { try { return ['matrix_tasks','matrix_free_tasks','matrix_categories'].reduce((n,k) => n + new Blob([localStorage.getItem(k)||'']).size, 0); } catch { return 0; } };
 
     // ── Progress Ring ──────────────────────────────────────────────
     const Ring = ({ pct, size = 36, stroke = 3.5 }) => {
@@ -167,8 +247,8 @@
     };
 
     // ── Toast ──────────────────────────────────────────────────────
-    const Toast = ({ toasts, dismiss }) => (
-      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] flex flex-col gap-2 items-center pointer-events-none">
+    const Toast = ({ toasts, dismiss, lift }) => (
+      <div style={{ bottom: lift ? 'calc(9.5rem + env(safe-area-inset-bottom))' : 'calc(1.5rem + env(safe-area-inset-bottom))' }} className="fixed left-1/2 -translate-x-1/2 z-[100] flex flex-col gap-2 items-center pointer-events-none">
         {toasts.map(t => (
           <div key={t.id} className={`anim-toast flex items-center gap-3 pl-4 pr-3 py-2.5 rounded-2xl shadow-2xl text-sm font-medium pointer-events-auto backdrop-blur
             ${t.type==='error' ? 'bg-rose-600/95 text-white' : t.type==='success' ? 'bg-emerald-600/95 text-white' : 'bg-neutral-900/95 dark:bg-white/95 text-white dark:text-neutral-900'}`}>
@@ -202,7 +282,7 @@
     };
 
     // ── Search Overlay ─────────────────────────────────────────────
-    const SearchOverlay = ({ tasks, onClose, onJump }) => {
+    const SearchOverlay = ({ tasks, onClose, onJump, metaOf }) => {
       const [q, setQ] = useState('');
       const ref = useRef(null);
       useEffect(() => { ref.current?.focus(); }, []);
@@ -211,14 +291,8 @@
         const lq = q.toLowerCase();
         return tasks.filter(t => t.text.toLowerCase().includes(lq) || (t.notes||'').toLowerCase().includes(lq)).slice(0, 50);
       }, [q, tasks]);
-      const qMeta = {
-        q1:{l:'Erledigen', c:'text-rose-500 bg-rose-50 dark:bg-rose-500/10'},
-        q2:{l:'Einplanen', c:'text-blue-500 bg-blue-50 dark:bg-blue-500/10'},
-        q3:{l:'Delegieren', c:'text-amber-500 bg-amber-50 dark:bg-amber-500/10'},
-        q4:{l:'Eliminieren', c:'text-zinc-400 bg-zinc-100 dark:bg-zinc-500/10'},
-      };
       return (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm anim-fade flex items-start justify-center pt-24 px-4" onClick={onClose}>
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm anim-fade flex items-start justify-center pt-16 sm:pt-24 px-4" onClick={onClose}>
           <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-2xl w-full max-w-lg border border-neutral-200 dark:border-neutral-700 overflow-hidden anim-zoom" onClick={e=>e.stopPropagation()}>
             <div className="flex items-center gap-3 px-4 py-3.5 border-b border-neutral-100 dark:border-neutral-800">
               <Ic n="search" size={17} cls="text-neutral-400 shrink-0"/>
@@ -234,17 +308,17 @@
                   <Ic n="search" size={24} cls="mx-auto mb-2 opacity-25"/>Tippen, um zu suchen…
                 </div>
               )}
-              {results.map(t => (
+              {results.map(t => { const m = metaOf(t); return (
                 <button key={t.id} onClick={()=>onJump(t)}
                   className="w-full flex items-center gap-3 px-4 py-3 hover:bg-neutral-50 dark:hover:bg-neutral-800 text-left border-b border-neutral-100 dark:border-neutral-800 last:border-0 transition-colors">
-                  <span className={`text-xs font-semibold px-2 py-1 rounded-lg shrink-0 ${qMeta[t.quadrant].c}`}>{qMeta[t.quadrant].l}</span>
+                  <span className={`text-xs font-semibold px-2 py-1 rounded-lg shrink-0 max-w-[40%] truncate ${m.c||''}`} style={m.style}>{m.l}</span>
                   <div className="flex-1 min-w-0">
                     <p className={`text-sm text-neutral-700 dark:text-neutral-200 truncate ${t.endKw?'line-through opacity-40':''}`}>{t.text}</p>
                     {t.notes && <p className="text-xs text-neutral-400 truncate mt-0.5">{t.notes}</p>}
                   </div>
                   <span className="text-xs text-neutral-400 shrink-0 font-medium">KW {t.startKw}</span>
                 </button>
-              ))}
+              ); })}
             </div>
           </div>
         </div>
@@ -252,20 +326,24 @@
     };
 
     // ── Backup Panel ───────────────────────────────────────────────
-    const BackupPanel = ({ tasks, onImport, onClose, addToast, selectedKw }) => {
+    const BackupPanel = ({ mode, tasks, freeTasks, categories, onImport, onClose, addToast, selectedKw }) => {
       const fileRef = useRef(null);
       const sz = storageSize();
+      const total = tasks.length + freeTasks.length;
       const doMarkdown = () => {
-        const week = tasks.filter(t => t.startKw<=selectedKw && (t.endKw===null||t.endKw>=selectedKw));
+        const inWeek = list => list.filter(t => t.startKw<=selectedKw && (t.endKw===null||t.endKw>=selectedKw));
         const names = { q1:'Wichtig & Dringend — Erledigen', q2:'Wichtig & Nicht dringend — Einplanen', q3:'Nicht wichtig & Dringend — Delegieren', q4:'Nicht wichtig & Nicht dringend — Eliminieren' };
+        const groups = mode === 'matrix'
+          ? ['q1','q2','q3','q4'].map(q => ({ name: names[q], list: inWeek(tasks).filter(t=>t.quadrant===q) }))
+          : [...categories.map(c => ({ name: c.name, list: inWeek(freeTasks).filter(t=>t.cat===c.id) })),
+             { name: 'Ohne Kategorie', list: inWeek(freeTasks).filter(t=>!categories.some(c=>c.id===t.cat)) }];
         let md = `# PrioMatrix — KW ${selectedKw} (${weekDateRange(selectedKw)})\n`;
-        for (const q of ['q1','q2','q3','q4']) {
-          const list = week.filter(t=>t.quadrant===q);
-          if (!list.length) continue;
-          md += `\n## ${names[q]}\n\n`;
-          for (const t of list) {
+        for (const g of groups) {
+          if (!g.list.length) continue;
+          md += `\n## ${g.name}\n\n`;
+          for (const t of g.list) {
             const done = t.endKw!==null && t.endKw<=selectedKw;
-            md += `- [${done?'x':' '}] ${t.text}${t.startKw<selectedKw?` *(seit KW ${t.startKw})*`:''}\n`;
+            md += `- [${done?'x':' '}] ${t.text}${t.due?` *(bis ${t.due})*`:''}${t.startKw<selectedKw?` *(seit KW ${t.startKw})*`:''}\n`;
             if (t.notes) md += t.notes.split('\n').map(l=>`  > ${l}`).join('\n') + '\n';
           }
         }
@@ -275,11 +353,11 @@
         addToast({ type:'success', message:`KW ${selectedKw} als Markdown exportiert` });
       };
       const doExport = () => {
-        const payload = { app:'PrioMatrix', version: 2, exportedAt: new Date().toISOString(), tasks };
+        const payload = { app:'PrioMatrix', version: 3, exportedAt: new Date().toISOString(), tasks, freeTasks, categories };
         const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
         const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: `priomatrix-backup-${new Date().toISOString().slice(0,10)}.json` });
         a.click(); URL.revokeObjectURL(a.href);
-        addToast({ type:'success', message:`${tasks.length} Aufgaben exportiert` });
+        addToast({ type:'success', message:`${total} Aufgaben exportiert` });
       };
       const doImport = (e) => {
         const file = e.target.files[0]; if (!file) return;
@@ -287,17 +365,19 @@
         reader.onload = (ev) => {
           try {
             const data = JSON.parse(ev.target.result);
-            const list = Array.isArray(data) ? data : (data.tasks || []);
-            if (!Array.isArray(list)) throw new Error();
-            onImport(list); addToast({ type:'success', message:`${list.length} Aufgaben importiert` }); onClose();
+            const payload = Array.isArray(data) ? { tasks: data } : data;
+            const ok = a => a === undefined || Array.isArray(a);
+            if (!payload || typeof payload !== 'object' || !ok(payload.tasks) || !ok(payload.freeTasks) || !ok(payload.categories)) throw new Error();
+            onImport(payload);
+            addToast({ type:'success', message:`${(payload.tasks||[]).length + (payload.freeTasks||[]).length} Aufgaben importiert` }); onClose();
           } catch { addToast({ type:'error', message:'Ungültige Backup-Datei' }); }
         };
         reader.readAsText(file);
         if (fileRef.current) fileRef.current.value = '';
       };
       const doClear = () => {
-        if (!confirm(`Alle ${tasks.length} Aufgaben unwiderruflich löschen?`)) return;
-        onImport([]); addToast({ type:'success', message:'Alle Daten gelöscht' }); onClose();
+        if (!confirm(`Alle ${total} Aufgaben (beide Modi) unwiderruflich löschen?`)) return;
+        onImport({ tasks: [], freeTasks: [], categories: [] }); addToast({ type:'success', message:'Alle Daten gelöscht' }); onClose();
       };
       return (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm anim-fade flex items-center justify-center p-4" onClick={onClose}>
@@ -319,13 +399,13 @@
                 <div className="h-1.5 bg-neutral-200 dark:bg-neutral-700 rounded-full overflow-hidden">
                   <div className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full transition-all" style={{width:`${Math.min(sz/52428.8,100)}%`}}/>
                 </div>
-                <p className="text-xs text-neutral-400 mt-2">{tasks.length} Aufgaben gespeichert</p>
+                <p className="text-xs text-neutral-400 mt-2">{total} Aufgaben gespeichert</p>
               </div>
               <button onClick={doExport} className="w-full flex items-center gap-3 px-4 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-xl font-medium text-sm transition-colors"><Ic n="dl" size={16}/> Als JSON exportieren</button>
-              <button onClick={doMarkdown} className="w-full flex items-center gap-3 px-4 py-3 bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 rounded-xl font-medium text-sm transition-colors"><Ic n="note" size={16}/> KW {selectedKw} als Markdown</button>
+              <button onClick={doMarkdown} className="w-full flex items-center gap-3 px-4 py-3 bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 rounded-xl font-medium text-sm transition-colors"><Ic n="note" size={16}/> KW {selectedKw} als Markdown ({mode==='matrix'?'Matrix':'Kategorien'})</button>
               <button onClick={()=>fileRef.current?.click()} className="w-full flex items-center gap-3 px-4 py-3 bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 rounded-xl font-medium text-sm transition-colors"><Ic n="ul" size={16}/> Backup importieren</button>
               <input ref={fileRef} type="file" accept=".json" className="hidden" onChange={doImport}/>
-              {tasks.length > 0 && (
+              {total > 0 && (
                 <button onClick={doClear} className="w-full flex items-center gap-3 px-4 py-3 bg-rose-50 dark:bg-rose-900/20 hover:bg-rose-100 dark:hover:bg-rose-900/30 text-rose-600 dark:text-rose-400 rounded-xl font-medium text-sm transition-colors"><Ic n="trash" size={16}/> Alle Daten löschen</button>
               )}
             </div>
@@ -361,16 +441,62 @@
       );
     };
 
+    // ── Zieldatum wählen ───────────────────────────────────────────
+    const DueSheet = ({ value, onPick, onClose }) => {
+      const chip = "px-3.5 py-2.5 rounded-xl text-sm font-medium bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 transition-colors";
+      const pick = d => { onPick(d); onClose(); };
+      return (
+        <div className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm anim-fade flex items-end sm:items-center justify-center sm:p-4" onClick={onClose}>
+          <div className="bg-white dark:bg-neutral-900 rounded-t-3xl sm:rounded-2xl shadow-2xl w-full max-w-sm border border-neutral-200 dark:border-neutral-700 anim-zoom p-5 safe-bottom" onClick={e=>e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="font-display font-semibold text-neutral-800 dark:text-neutral-100 flex items-center gap-2"><Ic n="cal" size={16} cls="text-neutral-500"/> Zieldatum</h2>
+              <button onClick={onClose} className="p-2 -mr-2 rounded-xl hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-400"><Ic n="x" size={16}/></button>
+            </div>
+            <div className="flex flex-wrap gap-2 mb-3">
+              <button className={chip} onClick={()=>pick(todayStr())}>Heute</button>
+              <button className={chip} onClick={()=>pick(addDays(todayStr(),1))}>Morgen</button>
+              <button className={chip} onClick={()=>pick(nextMonday())}>Nächste Woche</button>
+              {value && <button className={chip+' !text-rose-500'} onClick={()=>pick(null)}>Entfernen</button>}
+            </div>
+            <input type="date" value={value||''} onChange={e=>e.target.value && pick(e.target.value)}
+              className="w-full bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-xl px-3 py-2.5 text-sm text-neutral-700 dark:text-neutral-200 outline-none focus:border-blue-400"/>
+          </div>
+        </div>
+      );
+    };
+
+    // ── Kategorie / Quadrant wählen (Touch-freundlicher Ersatz für Drag & Drop) ──
+    const MovePicker = ({ groups, current, onPick, onClose }) => (
+      <div className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm anim-fade flex items-end sm:items-center justify-center sm:p-4" onClick={onClose}>
+        <div className="bg-white dark:bg-neutral-900 rounded-t-3xl sm:rounded-2xl shadow-2xl w-full max-w-sm border border-neutral-200 dark:border-neutral-700 anim-zoom p-3 safe-bottom max-h-[80vh] overflow-y-auto" onClick={e=>e.stopPropagation()}>
+          <p className="px-3 pt-2 pb-2 text-xs font-semibold uppercase tracking-wider text-neutral-400">Verschieben nach</p>
+          {groups.map(g => (
+            <button key={String(g.id)} onClick={()=>{ onPick(g.id); onClose(); }}
+              className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl text-left text-sm font-medium transition-colors hover:bg-neutral-100 dark:hover:bg-neutral-800 ${g.id===current ? 'text-blue-600 dark:text-blue-400' : 'text-neutral-700 dark:text-neutral-200'}`}>
+              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: g.color }}/>
+              <span className="flex-1 truncate">{g.label}</span>
+              {g.id===current && <Ic n="check" size={15}/>}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+
     // ── TaskItem ───────────────────────────────────────────────────
-    const TaskItem = ({ task, isCompleted, accentDot, toggleTask, deleteTask, attachImageToTask, removeImage, editTask, updateNotes, addToast, currentKw, selectedKw, reorderTask, restoreTask, postponeTask }) => {
+    const TaskItem = ({ task, isCompleted, accentDot, groups, groupKey, moveTask, setDue, toggleTask, deleteTask, attachImageToTask, removeImage, editTask, updateNotes, addToast, currentKw, selectedKw, reorderTask, restoreTask, postponeTask }) => {
       const [dropOver, setDropOver] = useState(false);
       const [dragging, setDragging] = useState(false);
       const [editing, setEditing] = useState(false);
       const [editText, setEditText] = useState(task.text);
       const [showNotes, setShowNotes] = useState(false);
       const [lightbox, setLightbox] = useState(false);
+      const [showDue, setShowDue] = useState(false);
+      const [showMove, setShowMove] = useState(false);
+      const [showActs, setShowActs] = useState(false);
       const fileRef = useRef(null);
       const carriedOver = !isCompleted && task.startKw < selectedKw;
+      const overdue = isOverdue(task);
+      const dueToday = !isCompleted && task.due === todayStr();
 
       const handleDrop = async (e) => {
         e.preventDefault(); setDropOver(false);
@@ -412,10 +538,10 @@
               ${dragging ? 'opacity-30 scale-[0.97] rotate-1' : ''}
               ${!editing ? 'cursor-grab active:cursor-grabbing' : ''}`}
           >
-            <div className="flex items-start gap-2.5 w-full">
+            <div className="flex flex-wrap md:flex-nowrap items-start gap-x-2.5 gap-y-1 w-full">
               <button onClick={()=>toggleTask(task.id)}
-                className={`flex-shrink-0 mt-0.5 transition-all rounded-full ${isCompleted ? 'text-emerald-500 anim-pop' : 'text-neutral-300 dark:text-neutral-600 hover:text-emerald-500 hover:scale-110'}`}>
-                <Ic n={isCompleted?'check':'circle'} size={17}/>
+                className={`flex-shrink-0 mt-0.5 transition-all rounded-full chk ${isCompleted ? 'text-emerald-500 anim-pop' : 'text-neutral-300 dark:text-neutral-600 hover:text-emerald-500 hover:scale-110'}`}>
+                <Ic n={isCompleted?'check':'circle'} size={20}/>
               </button>
 
               <div className="flex-1 min-w-0">
@@ -430,8 +556,15 @@
                     {task.text}
                   </span>
                 )}
-                {(carriedOver || task.notes) && !editing && (
-                  <div className="flex items-center gap-2 mt-1 ml-0">
+                {(carriedOver || task.notes || task.due) && !editing && (
+                  <div className="flex flex-wrap items-center gap-2 mt-1 ml-0">
+                    {task.due && (
+                      <button onClick={()=>setShowDue(true)} title="Zieldatum ändern"
+                        className={`inline-flex items-center gap-1 whitespace-nowrap text-[11px] font-medium px-1.5 py-0.5 rounded-md
+                          ${overdue ? 'text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-500/10' : dueToday ? 'text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-500/10' : 'text-neutral-500 dark:text-neutral-400 bg-neutral-100 dark:bg-neutral-700/50'}`}>
+                        <Ic n={overdue?'alert':'cal'} size={10}/> {overdue ? 'Überfällig · ' : ''}{fmtDue(task.due)}
+                      </button>
+                    )}
                     {carriedOver && (
                       <span className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10 px-1.5 py-0.5 rounded-md" title={`Seit KW ${task.startKw} offen`}>
                         <Ic n="arrow" size={9}/> seit KW {task.startKw}
@@ -442,7 +575,12 @@
                 )}
               </div>
 
-              <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 shrink-0 transition-opacity">
+              <button onClick={()=>setShowActs(a=>!a)} aria-label="Aktionen" className="md:hidden shrink-0 p-1.5 -mr-1 rounded-lg text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-700"><Ic n="dots" size={16}/></button>
+              <div className={`act-row ${showActs ? 'flex' : 'hidden'} md:flex w-full md:w-auto order-last md:order-none justify-end md:opacity-0 md:group-hover:opacity-100 items-center gap-0.5 shrink-0 transition-opacity`}>
+                {!isCompleted && (
+                  <button onClick={()=>setShowDue(true)} title="Zieldatum" className="p-1 rounded-lg text-neutral-400 hover:text-orange-500 hover:bg-orange-50 dark:hover:bg-orange-900/30 transition-colors"><Ic n="cal" size={13}/></button>
+                )}
+                <button onClick={()=>setShowMove(true)} title="Verschieben nach…" className="p-1 rounded-lg text-neutral-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"><Ic n="tag" size={13}/></button>
                 {!isCompleted && selectedKw < 52 && (
                   <button onClick={()=>postponeTask(task.id)} title="Auf nächste Woche schieben" className="p-1 rounded-lg text-neutral-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/30 transition-colors"><Ic n="arrowRight" size={13}/></button>
                 )}
@@ -463,6 +601,8 @@
               </div>
             )}
           </div>
+          {showDue && <DueSheet value={task.due} onPick={d=>setDue(task.id, d)} onClose={()=>setShowDue(false)}/>}
+          {showMove && <MovePicker groups={groups} current={task[groupKey] ?? null} onPick={g=>moveTask(task.id, g)} onClose={()=>setShowMove(false)}/>}
           {showNotes && <NotesModal task={task} onSave={n=>updateNotes(task.id,n)} onClose={()=>setShowNotes(false)}/>}
           {lightbox && task.image && <Lightbox src={task.image} onClose={()=>setLightbox(false)}/>}
         </>
@@ -506,7 +646,7 @@
       const done = tasks.filter(t=>t.endKw!==null && t.endKw<=selectedKw).length;
       const pct = tasks.length ? done / tasks.length : 0;
 
-      const doAdd = () => { if(input.trim()){ addTask(id,input); setInput(''); } };
+      const doAdd = () => { if(input.trim()){ const p = parseQuick(input, []); addTask(id, p.text || input, null, p.due); setInput(''); } };
       const handlePaste = async (e) => {
         const items = e.clipboardData?.items; if (!items) return;
         for (const item of items) {
@@ -560,7 +700,7 @@
           </div>
 
           {/* Task list */}
-          <div className="flex-1 p-3 pl-4 space-y-2 overflow-y-auto min-h-0">
+          <div className="flex-1 p-3 pl-4 space-y-2 md:overflow-y-auto min-h-[150px] md:min-h-0">
             {tasks.length === 0 ? (
               <label className="flex flex-col items-center justify-center h-full min-h-[120px] text-neutral-300 dark:text-neutral-700 gap-2 cursor-pointer hover:text-neutral-400 dark:hover:text-neutral-600 transition-colors" onClick={()=>fileRef.current?.click()}>
                 <Ic n={s.icon} size={28} sw={1.5}/>
@@ -586,7 +726,7 @@
     };
 
     // ── Week Sidebar ───────────────────────────────────────────────
-    const WeekSidebar = ({ selectedKw, currentKw, tasks, onSelect, scrollRef }) => {
+    const WeekSidebar = ({ selectedKw, currentKw, tasks, onSelect, scrollRef, className = '', onClose }) => {
       const weekStats = useMemo(() => {
         const map = {};
         for (let w = 1; w <= 52; w++) {
@@ -597,10 +737,13 @@
       }, [tasks]);
 
       return (
-        <div className="w-60 bg-white dark:bg-neutral-900 border-l border-neutral-200 dark:border-neutral-800 flex flex-col shrink-0">
-          <div className="px-4 py-3.5 border-b border-neutral-100 dark:border-neutral-800 shrink-0">
-            <p className="font-display text-sm font-semibold text-neutral-700 dark:text-neutral-200">Jahresplan</p>
-            <p className="text-xs text-neutral-400 mt-0.5">{new Date().getFullYear()} · 52 Wochen</p>
+        <div className={`w-64 md:w-60 bg-white dark:bg-neutral-900 border-l border-neutral-200 dark:border-neutral-800 flex-col shrink-0 ${className}`}>
+          <div className="px-4 py-3.5 border-b border-neutral-100 dark:border-neutral-800 shrink-0 flex items-center justify-between safe-top">
+            <div>
+              <p className="font-display text-sm font-semibold text-neutral-700 dark:text-neutral-200">Jahresplan</p>
+              <p className="text-xs text-neutral-400 mt-0.5">{new Date().getFullYear()} · 52 Wochen</p>
+            </div>
+            {onClose && <button onClick={onClose} className="md:hidden p-2 -mr-2 rounded-xl text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"><Ic n="x" size={16}/></button>}
           </div>
           <div className="flex-1 overflow-y-auto p-2" ref={scrollRef}>
             {Array.from({length:52},(_,i)=>i+1).map(w => {
@@ -643,7 +786,7 @@
     };
     const kanbanStatusOf = (t, selectedKw) => (t.endKw!==null && t.endKw<=selectedKw) ? 'done' : (t.status==='doing' ? 'doing' : 'todo');
 
-    const KanbanCard = ({ task, onOpenNotes, deleteTask, restoreTask, addToast }) => {
+    const KanbanCard = ({ task, onOpenNotes, deleteTask, restoreTask, addToast, onAdvance }) => {
       const [lightbox, setLightbox] = useState(false);
       const meta = QUAD_META[task.quadrant];
       const handleDelete = (e) => {
@@ -661,8 +804,11 @@
               <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${meta.dot}`}/>
               <span className={`text-[10px] font-bold uppercase tracking-wide ${meta.text}`}>{meta.label}</span>
               <div className="flex-1"/>
-              <button onClick={()=>onOpenNotes(task)} title="Notiz" className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-neutral-400 hover:text-blue-500 transition-all"><Ic n="note" size={11}/></button>
-              <button onClick={handleDelete} title="Löschen" className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-neutral-400 hover:text-rose-500 transition-all"><Ic n="trash" size={11}/></button>
+              <div className="act-row opacity-0 group-hover:opacity-100 flex items-center gap-0.5 transition-opacity">
+                <button onClick={()=>onAdvance(task)} title="Nächste Spalte" className="p-0.5 rounded text-neutral-400 hover:text-emerald-500 transition-all"><Ic n="arrowRight" size={11}/></button>
+                <button onClick={()=>onOpenNotes(task)} title="Notiz" className="p-0.5 rounded text-neutral-400 hover:text-blue-500 transition-all"><Ic n="note" size={11}/></button>
+                <button onClick={handleDelete} title="Löschen" className="p-0.5 rounded text-neutral-400 hover:text-rose-500 transition-all"><Ic n="trash" size={11}/></button>
+              </div>
             </div>
             <p className="text-sm text-neutral-700 dark:text-neutral-200 leading-snug break-words">{task.text}</p>
             {task.notes && <p className="text-xs text-neutral-400 mt-1 line-clamp-2">{task.notes}</p>}
@@ -696,7 +842,7 @@
       };
 
       return (
-        <div className="h-full grid grid-cols-3 gap-3">
+        <div className="md:h-full grid grid-cols-1 md:grid-cols-3 gap-3">
           {KANBAN_COLS.map(col => {
             const list = columns[col.key];
             return (
@@ -704,7 +850,7 @@
                 onDragOver={e=>{ e.preventDefault(); setDragOverCol(col.key); }}
                 onDragLeave={e=>{ if(!e.currentTarget.contains(e.relatedTarget)) setDragOverCol(null); }}
                 onDrop={handleDrop(col.key)}
-                className={`flex flex-col rounded-2xl border overflow-hidden card-shadow transition-all ${col.tint} border-neutral-200/70 dark:border-neutral-800
+                className={`flex flex-col rounded-2xl border overflow-hidden card-shadow transition-all min-h-[140px] md:min-h-0 ${col.tint} border-neutral-200/70 dark:border-neutral-800
                   ${dragOverCol===col.key ? 'ring-2 ring-blue-400 ring-offset-2 ring-offset-neutral-100 dark:ring-offset-neutral-950' : ''}`}>
                 <div className="px-4 py-3 bg-white/70 dark:bg-neutral-900/60 backdrop-blur-sm border-b border-neutral-200/60 dark:border-neutral-800 flex items-center justify-between shrink-0">
                   <div className="flex items-center gap-2">
@@ -713,7 +859,7 @@
                   </div>
                   <span className="text-xs font-semibold text-neutral-400 tabular-nums">{list.length}</span>
                 </div>
-                <div className="flex-1 overflow-y-auto p-3 space-y-4 min-h-0">
+                <div className="flex-1 md:overflow-y-auto p-3 space-y-4 min-h-0">
                   {list.length === 0 ? (
                     <p className="text-xs text-neutral-300 dark:text-neutral-700 text-center py-10">Leer</p>
                   ) : ['q1','q2','q3','q4'].map(q => {
@@ -726,7 +872,8 @@
                           <span className={`w-1.5 h-1.5 rounded-full ${meta.dot}`}/>{meta.full}
                         </p>
                         <div className="space-y-2">
-                          {qList.map(t => <KanbanCard key={t.id} task={t} onOpenNotes={setNotesTask} deleteTask={deleteTask} restoreTask={restoreTask} addToast={addToast}/>)}
+                          {qList.map(t => <KanbanCard key={t.id} task={t} onOpenNotes={setNotesTask} deleteTask={deleteTask} restoreTask={restoreTask} addToast={addToast}
+                            onAdvance={task => setKanbanStatus(task.id, KANBAN_COLS[(KANBAN_COLS.findIndex(c=>c.key===col.key)+1) % KANBAN_COLS.length].key)}/>)}
                         </div>
                       </div>
                     );
@@ -740,26 +887,251 @@
       );
     };
 
+    // ── Kategorien: neue Kategorie anlegen ─────────────────────────
+    const NewCategory = ({ onAdd, existing, compact, autoFocus }) => {
+      const [name, setName] = useState('');
+      const submit = () => { const n = name.trim(); if (n) { onAdd(n); setName(''); } };
+      const sugg = CAT_SUGGEST.filter(n => !existing.some(c => c.name.toLowerCase() === n.toLowerCase()));
+      return (
+        <div>
+          <div className="flex items-center gap-2">
+            <input value={name} autoFocus={autoFocus} onChange={e=>setName(e.target.value)} onKeyDown={e=>e.key==='Enter'&&submit()}
+              placeholder="Neue Kategorie…" enterKeyHint="done"
+              className="flex-1 min-w-0 bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-xl px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200 outline-none focus:border-blue-400 placeholder-neutral-400"/>
+            <button onClick={submit} className="p-2.5 rounded-xl bg-blue-500 hover:bg-blue-600 text-white transition-colors shrink-0"><Ic n="plus" size={16}/></button>
+          </div>
+          {!compact && sugg.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mt-2.5">
+              {sugg.map(n => (
+                <button key={n} onClick={()=>onAdd(n)} className="px-2.5 py-1.5 rounded-full text-xs font-medium bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-600 dark:text-neutral-300 transition-colors">+ {n}</button>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    // ── Kategorie-Karte ────────────────────────────────────────────
+    const CategoryCard = ({ cat, tasks, selectedKw, currentKw, onAdd, onRename, onRecolor, onRemove, taskProps }) => {
+      const [input, setInput] = useState('');
+      const [menu, setMenu] = useState(false);
+      const [name, setName] = useState(null);
+      const [dropOver, setDropOver] = useState(false);
+      const fileRef = useRef(null);
+      const color = cat ? cat.color : '#a1a1aa';
+      const done = tasks.filter(t => t.endKw !== null && t.endKw <= selectedKw).length;
+
+      const doAdd = () => { if (input.trim()) { onAdd(input, null); setInput(''); } };
+      const handlePaste = async (e) => {
+        for (const item of (e.clipboardData?.items || [])) {
+          if (item.type.startsWith('image/')) { e.preventDefault(); const f = item.getAsFile(); if (f) onAdd(input, await resizeImage(f)); setInput(''); return; }
+        }
+      };
+      const handleFile = async (e) => {
+        const f = e.target.files[0];
+        if (f?.type.startsWith('image/')) { onAdd(input, await resizeImage(f)); setInput(''); }
+        if (fileRef.current) fileRef.current.value = '';
+      };
+      const handleDrop = async (e) => {
+        e.preventDefault(); setDropOver(false);
+        try { const d = JSON.parse(e.dataTransfer.getData('application/json')); if (d.type === 'task') { taskProps.moveTask(d.id, cat ? cat.id : null); return; } } catch {}
+        const f = e.dataTransfer.files[0];
+        if (f?.type.startsWith('image/')) onAdd('', await resizeImage(f));
+      };
+      const commitName = () => { const n = (name || '').trim(); if (n && n !== cat.name) onRename(cat.id, n); setName(null); };
+
+      return (
+        <div onDragOver={e=>{ e.preventDefault(); setDropOver(true); }}
+          onDragLeave={e=>{ if(!e.currentTarget.contains(e.relatedTarget)) setDropOver(false); }} onDrop={handleDrop}
+          className={`relative flex flex-col rounded-2xl overflow-hidden card-shadow border border-neutral-200/70 dark:border-neutral-800 bg-white/60 dark:bg-neutral-900/50 transition-all ${dropOver ? 'ring-2 ring-blue-400' : ''}`}>
+          <div className="absolute left-0 top-0 bottom-0 w-1" style={{ background: color }}/>
+          <div className="pl-5 pr-2 py-2.5 flex items-center gap-2 border-b border-neutral-200/60 dark:border-neutral-800" style={{ background: color + '1f' }}>
+            {name !== null ? (
+              <input autoFocus value={name} onChange={e=>setName(e.target.value)} onBlur={commitName}
+                onKeyDown={e=>{ if(e.key==='Enter') commitName(); if(e.key==='Escape') setName(null); }}
+                className="flex-1 min-w-0 bg-white/80 dark:bg-neutral-800 rounded-lg px-2 py-1 font-display font-semibold outline-none border border-blue-300"/>
+            ) : (
+              <h3 onClick={()=>cat && setName(cat.name)} title={cat ? 'Umbenennen' : ''}
+                className={`flex-1 min-w-0 truncate font-display text-[17px] font-semibold ${cat ? 'cursor-text' : 'text-neutral-500'}`}>{cat ? cat.name : 'Ohne Kategorie'}</h3>
+            )}
+            {tasks.length > 0 && <span className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 tabular-nums shrink-0">{done}/{tasks.length}</span>}
+            {cat && <button onClick={()=>setMenu(m=>!m)} className="p-2 rounded-xl text-neutral-400 hover:bg-black/5 dark:hover:bg-white/10 shrink-0" title="Kategorie bearbeiten"><Ic n="dots" size={16}/></button>}
+          </div>
+          {menu && cat && (
+            <div className="pl-5 pr-3 py-2.5 border-b border-neutral-200/60 dark:border-neutral-800 anim-slide">
+              <div className="flex flex-wrap gap-2 mb-2.5">
+                {CAT_COLORS.map(c => (
+                  <button key={c} onClick={()=>onRecolor(cat.id, c)} className={`w-7 h-7 rounded-full transition-transform ${c===cat.color ? 'ring-2 ring-offset-2 ring-neutral-400 dark:ring-offset-neutral-900 scale-110' : ''}`} style={{ background: c }}/>
+                ))}
+              </div>
+              <button onClick={()=>onRemove(cat.id)} className="flex items-center gap-1.5 text-xs font-medium text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 px-2 py-1.5 rounded-lg transition-colors"><Ic n="trash" size={12}/> Kategorie löschen</button>
+            </div>
+          )}
+          <div className="p-3 pl-4 space-y-2">
+            {tasks.length === 0 && <p className="text-xs text-neutral-400 dark:text-neutral-600 text-center py-4">Noch nichts hier.</p>}
+            {tasks.map(t => <TaskItem key={t.id} task={t} isCompleted={t.endKw!==null && t.endKw<=selectedKw} selectedKw={selectedKw} currentKw={currentKw} accentDot="" {...taskProps}/>)}
+          </div>
+          {cat && (
+            <div className="pl-4 pr-3 py-2 bg-white/70 dark:bg-neutral-900/60 border-t border-neutral-200/60 dark:border-neutral-800 flex items-center gap-1.5">
+              <button onClick={doAdd} className="p-1.5 rounded-lg shrink-0" style={{ color }}><Ic n="plus" size={18}/></button>
+              <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&doAdd()} onPaste={handlePaste}
+                placeholder="Neue Aufgabe…" enterKeyHint="done"
+                className="flex-1 bg-transparent text-sm text-neutral-700 dark:text-neutral-200 placeholder-neutral-400 dark:placeholder-neutral-600 outline-none min-w-0 py-2"/>
+              <button onClick={()=>fileRef.current?.click()} title="Bild" className="p-2 rounded-lg text-neutral-400 hover:text-blue-500 shrink-0"><Ic n="image" size={15}/></button>
+              <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFile}/>
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    const CategoryBoard = ({ categories, getGroup, selectedKw, currentKw, addTaskTo, addCategory, renameCategory, recolorCategory, removeCategory, taskProps, onlyOverdue }) => {
+      const loose = getGroup(null);
+      const cards = categories.map(c => ({ c, list: getGroup(c.id) })).filter(x => !onlyOverdue || x.list.length);
+      if (categories.length === 0 && loose.length === 0) {
+        return (
+          <div className="max-w-md mx-auto mt-6 sm:mt-14 bg-white dark:bg-neutral-900 rounded-2xl border border-neutral-200 dark:border-neutral-800 card-shadow p-6 anim-zoom">
+            <h2 className="font-display text-xl font-semibold mb-1">Eigene Kategorien</h2>
+            <p className="text-sm text-neutral-500 dark:text-neutral-400 mb-4">Lege Kategorien an, z. B. Haushalt oder Einkauf, und sortiere deine Aufgaben frei ein. Tippe einen Vorschlag an oder gib einen eigenen Namen ein.</p>
+            <NewCategory onAdd={addCategory} existing={categories}/>
+          </div>
+        );
+      }
+      return (
+        <div className="grid gap-3 grid-cols-1 md:grid-cols-2 xl:grid-cols-3 items-start pb-4">
+          {cards.map(({ c, list }) => (
+            <CategoryCard key={c.id} cat={c} tasks={list} selectedKw={selectedKw} currentKw={currentKw}
+              onAdd={(text, img) => addTaskTo(c.id, text, img)} onRename={renameCategory} onRecolor={recolorCategory} onRemove={removeCategory} taskProps={taskProps}/>
+          ))}
+          {loose.length > 0 && <CategoryCard cat={null} tasks={loose} selectedKw={selectedKw} currentKw={currentKw} taskProps={taskProps}/>}
+          {!onlyOverdue && (
+            <div className="rounded-2xl border-2 border-dashed border-neutral-300 dark:border-neutral-700 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-2">Neue Kategorie</p>
+              <NewCategory onAdd={addCategory} existing={categories}/>
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    // ── Schnell anlegen (fest unten): Text + Kategorie antippen + Enter ──
+    const QuickAdd = ({ categories, lastCat, setLastCat, onSubmit, addCategory }) => {
+      const [text, setText] = useState('');
+      const [due, setDue] = useState(null);
+      const [showDue, setShowDue] = useState(false);
+      const [adding, setAdding] = useState(false);
+      const [flash, setFlash] = useState('');
+      const ref = useRef(null);
+      const flashTimer = useRef(null);
+
+      const submit = () => {
+        if (!text.trim()) { ref.current?.focus(); return; }
+        const p = parseQuick(text, categories);
+        const cat = p.cat ?? lastCat;
+        onSubmit({ text: p.text || text.trim(), cat, due: p.due || due });
+        const name = categories.find(c => c.id === cat)?.name;
+        setFlash(name ? `✓ ${name}` : '✓ Angelegt');
+        clearTimeout(flashTimer.current); flashTimer.current = setTimeout(() => setFlash(''), 1800);
+        setText(''); setDue(null);
+        ref.current?.focus();
+      };
+
+      return (
+        <div className="shrink-0 bg-white/95 dark:bg-neutral-900/95 backdrop-blur-md border-t border-neutral-200 dark:border-neutral-800 px-3 pt-2.5 safe-bottom pb-2.5 z-20">
+          <div className="flex items-center gap-2 max-w-3xl mx-auto">
+            <input ref={ref} value={text} onChange={e=>setText(e.target.value)} onKeyDown={e=>e.key==='Enter'&&submit()}
+              placeholder="Was ist zu tun?" enterKeyHint="send" autoComplete="off" autoCapitalize="sentences"
+              className="flex-1 min-w-0 bg-neutral-100 dark:bg-neutral-800 rounded-2xl px-4 py-3 text-[15px] text-neutral-800 dark:text-neutral-100 placeholder-neutral-400 outline-none focus:ring-2 focus:ring-blue-400/60"/>
+            <button onClick={()=>setShowDue(true)} title="Zieldatum"
+              className={`shrink-0 flex items-center gap-1 px-3 h-12 rounded-2xl text-sm font-medium transition-colors ${due ? 'bg-orange-100 dark:bg-orange-500/15 text-orange-600 dark:text-orange-300' : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400'}`}>
+              <Ic n="cal" size={18}/>{due && <span>{fmtDue(due)}</span>}
+            </button>
+            <button onClick={submit} title="Hinzufügen" className="shrink-0 w-12 h-12 rounded-2xl bg-blue-500 hover:bg-blue-600 active:scale-95 text-white flex items-center justify-center transition-all"><Ic n="plus" size={22} sw={2.5}/></button>
+          </div>
+          <div className="flex items-center gap-1.5 max-w-3xl mx-auto mt-2 overflow-x-auto no-scrollbar">
+            {categories.map(c => {
+              const on = lastCat === c.id;
+              return (
+                <button key={c.id} onClick={()=>setLastCat(on ? null : c.id)}
+                  className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[13px] font-medium border transition-all"
+                  style={on ? { background: c.color, borderColor: c.color, color: '#fff' } : { borderColor: c.color + '66', color: 'inherit' }}>
+                  {!on && <span className="w-2 h-2 rounded-full" style={{ background: c.color }}/>}{c.name}
+                </button>
+              );
+            })}
+            <button onClick={()=>setAdding(a=>!a)} className="shrink-0 px-3 py-1.5 rounded-full text-[13px] font-medium bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400">+ Neu</button>
+            {flash && <span className="shrink-0 ml-1 text-xs font-medium text-emerald-600 dark:text-emerald-400 anim-fade">{flash}</span>}
+          </div>
+          {adding && (
+            <div className="max-w-3xl mx-auto mt-2 anim-slide">
+              <NewCategory autoFocus compact existing={categories} onAdd={n=>{ const id = addCategory(n); if (id) setLastCat(id); setAdding(false); ref.current?.focus(); }}/>
+            </div>
+          )}
+          {showDue && <DueSheet value={due} onPick={setDue} onClose={()=>{ setShowDue(false); ref.current?.focus(); }}/>}
+        </div>
+      );
+    };
+
+    const SEARCH_META = {
+      q1:{l:'Erledigen', c:'text-rose-500 bg-rose-50 dark:bg-rose-500/10'},
+      q2:{l:'Einplanen', c:'text-blue-500 bg-blue-50 dark:bg-blue-500/10'},
+      q3:{l:'Delegieren', c:'text-amber-500 bg-amber-50 dark:bg-amber-500/10'},
+      q4:{l:'Eliminieren', c:'text-zinc-400 bg-zinc-100 dark:bg-zinc-500/10'},
+    };
+    const QUADS = [
+      {id:'q1', subtitle:'Wichtig & Dringend', label:'Erledigen', color:'#f43f5e'},
+      {id:'q2', subtitle:'Wichtig & Nicht dringend', label:'Einplanen', color:'#3b82f6'},
+      {id:'q3', subtitle:'Nicht wichtig & Dringend', label:'Delegieren', color:'#f59e0b'},
+      {id:'q4', subtitle:'Nicht wichtig & Nicht dringend', label:'Eliminieren', color:'#a1a1aa'},
+    ];
+
     // ── App ────────────────────────────────────────────────────────
     function App() {
       const currentKw = getISOWeek(new Date());
       const [selectedKw, setSelectedKw] = useState(currentKw);
       const [tasks, setTasks] = useState([]);
+      const [freeTasks, setFreeTasks] = useState([]);
+      const [categories, setCategories] = useState([]);
+      const [mode, setMode] = useState('matrix');
+      const [lastCat, setLastCat] = useState(null);
       const [loaded, setLoaded] = useState(false);
       const [dark, setDark] = useState(false);
       const [view, setView] = useState('matrix');
       const [showSearch, setShowSearch] = useState(false);
       const [showBackup, setShowBackup] = useState(false);
+      const [showWeeks, setShowWeeks] = useState(false);
+      const [onlyOverdue, setOnlyOverdue] = useState(false);
+      const [banner, setBanner] = useState(true);
+      const [notifPerm, setNotifPerm] = useState(typeof Notification !== 'undefined' ? Notification.permission : 'unsupported');
+      const [, setTick] = useState(0);
       const [toasts, setToasts] = useState([]);
       const scrollRef = useRef(null);
+      const allRef = useRef([]);
+
+      const isFree = mode === 'free';
+      const list = isFree ? freeTasks : tasks;
+      const setList = isFree ? setFreeTasks : setTasks;
+      const groupKey = isFree ? 'cat' : 'quadrant';
 
       useEffect(() => {
-        try { const s = localStorage.getItem('matrix_tasks'); if(s) setTasks(JSON.parse(s)); } catch {}
+        const read = (k, fb) => { try { const s = localStorage.getItem(k); return s ? JSON.parse(s) : fb; } catch { return fb; } };
+        setTasks(read('matrix_tasks', []));
+        setFreeTasks(read('matrix_free_tasks', []));
+        setCategories(read('matrix_categories', []));
+        setLastCat(read('matrix_lastcat', null));
+        setMode(localStorage.getItem('matrix_mode') === 'free' ? 'free' : 'matrix');
         setDark(localStorage.getItem('matrix_dark') === 'true');
         setLoaded(true);
       }, []);
-      useEffect(() => { if(loaded) localStorage.setItem('matrix_tasks', JSON.stringify(tasks)); }, [tasks, loaded]);
-      useEffect(() => { localStorage.setItem('matrix_dark', dark); document.documentElement.classList.toggle('dark', dark); }, [dark]);
+      useEffect(() => { if(loaded) saveLS('matrix_tasks', tasks); }, [tasks, loaded]);
+      useEffect(() => { if(loaded) saveLS('matrix_free_tasks', freeTasks); }, [freeTasks, loaded]);
+      useEffect(() => { if(loaded) saveLS('matrix_categories', categories); }, [categories, loaded]);
+      useEffect(() => { if(loaded) saveLS('matrix_lastcat', lastCat); }, [lastCat, loaded]);
+      useEffect(() => { if(loaded) saveLS('matrix_mode', mode); }, [mode, loaded]);
+      useEffect(() => {
+        saveLS('matrix_dark', String(dark)); document.documentElement.classList.toggle('dark', dark);
+        document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#0a0a0a' : '#ffffff');
+      }, [dark]);
       useEffect(() => { if(!loaded) return; const el = scrollRef.current?.querySelector(`[data-kw="${currentKw}"]`); if(el) el.scrollIntoView({behavior:'smooth',block:'center'}); }, [loaded]);
 
       const goToWeek = useCallback((w) => {
@@ -771,7 +1143,7 @@
       useEffect(() => {
         const fn = e => {
           if((e.metaKey||e.ctrlKey) && e.key==='k') { e.preventDefault(); setShowSearch(s=>!s); return; }
-          if(e.key==='Escape') { setShowSearch(false); setShowBackup(false); return; }
+          if(e.key==='Escape') { setShowSearch(false); setShowBackup(false); setShowWeeks(false); return; }
           const typing = /^(INPUT|TEXTAREA)$/.test(e.target.tagName) || e.target.isContentEditable;
           if(typing) return;
           if(e.key==='ArrowDown' || e.key==='ArrowRight') { e.preventDefault(); setSelectedKw(w => { const n=Math.min(52,w+1); requestAnimationFrame(()=>scrollRef.current?.querySelector(`[data-kw="${n}"]`)?.scrollIntoView({block:'nearest'})); return n; }); }
@@ -788,16 +1160,60 @@
       }, []);
       const dismissToast = useCallback(id => setToasts(t=>t.filter(x=>x.id!==id)), []);
 
-      const addTask = (quadrant, text, image=null) => {
-        if(!text.trim() && !image) return;
-        setTasks(prev => [...prev, { id:Date.now().toString()+Math.random().toString(36).slice(2,6), text:text.trim()||'Bildaufgabe', image, notes:'', quadrant, status:'todo', startKw:selectedKw, endKw:null }]);
+      // ── Erinnerungen (überfällige Aufgaben, beide Modi) ──
+      allRef.current = [...tasks, ...freeTasks];
+      const notifyOverdue = useCallback(async () => {
+        if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+        const od = allRef.current.filter(isOverdue);
+        if (!od.length) return;
+        let st = null; try { st = JSON.parse(localStorage.getItem('matrix_notified') || 'null'); } catch {}
+        const day = todayStr();
+        const seen = st && st.day === day ? st.ids : [];
+        const fresh = od.filter(t => !seen.includes(t.id));
+        if (!fresh.length) return;
+        saveLS('matrix_notified', { day, ids: [...seen, ...fresh.map(t => t.id)] });
+        const title = fresh.length === 1 ? 'Aufgabe überfällig' : `${fresh.length} Aufgaben überfällig`;
+        const body = fresh.slice(0,3).map(t => `• ${t.text}`).join('\n') + (fresh.length > 3 ? `\n… und ${fresh.length-3} weitere` : '');
+        const opts = { body, icon: 'icon-192.png', tag: 'priomatrix-overdue' };
+        try { const reg = await navigator.serviceWorker?.getRegistration(); if (reg) { await reg.showNotification(title, opts); return; } } catch {}
+        try { new Notification(title, opts); } catch {}
+      }, []);
+      useEffect(() => { if (loaded) notifyOverdue(); }, [loaded, tasks, freeTasks, notifPerm]);
+      useEffect(() => {
+        const tick = () => { setTick(x => x + 1); notifyOverdue(); };
+        const iv = setInterval(tick, 15 * 60 * 1000);
+        const vis = () => { if (document.visibilityState === 'visible') tick(); };
+        document.addEventListener('visibilitychange', vis);
+        return () => { clearInterval(iv); document.removeEventListener('visibilitychange', vis); };
+      }, []);
+      const enableNotifications = () => {
+        if (typeof Notification === 'undefined') return;
+        Notification.requestPermission().then(p => {
+          setNotifPerm(p);
+          addToast(p === 'granted' ? { type:'success', message:'Erinnerungen aktiviert' } : { type:'error', message:'Benachrichtigungen wurden nicht erlaubt' });
+        });
       };
-      const editTask = (id, newText) => setTasks(prev => prev.map(t => t.id===id ? {...t, text:newText} : t));
-      const restoreTask = (snap) => setTasks(prev => [...prev, snap]);
-      const updateNotes = (id, notes) => setTasks(prev => prev.map(t => t.id===id ? {...t, notes} : t));
-      const attachImageToTask = (id, img) => setTasks(prev => prev.map(t => t.id===id ? {...t,image:img} : t));
-      const removeImage = (id) => setTasks(prev => prev.map(t => t.id===id ? {...t,image:null} : t));
-      const toggleTask = (id) => setTasks(prev => {
+      useEffect(() => {
+        if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) navigator.serviceWorker.register('sw.js').catch(() => {});
+      }, []);
+
+      // ── Aufgaben ──
+      const addTask = (group, text, image=null, due=null) => {
+        if(!text.trim() && !image) return;
+        setList(prev => [...prev, { id:newId(), text:text.trim()||'Bildaufgabe', image, notes:'', [groupKey]:group, status:'todo', startKw:selectedKw, endKw:null, due:due||null }]);
+      };
+      const addTaskTo = (catId, text, image=null) => { const p = parseQuick(text, []); addTask(catId, p.text || text, image, p.due); };
+      const quickSubmit = ({ text, cat, due }) => {
+        if (cat) setLastCat(cat);
+        addTask(cat, text, null, due);
+      };
+      const editTask = (id, newText) => setList(prev => prev.map(t => t.id===id ? {...t, text:newText} : t));
+      const restoreTask = (snap) => setList(prev => [...prev, snap]);
+      const updateNotes = (id, notes) => setList(prev => prev.map(t => t.id===id ? {...t, notes} : t));
+      const setDue = (id, due) => setList(prev => prev.map(t => t.id===id ? {...t, due} : t));
+      const attachImageToTask = (id, img) => setList(prev => prev.map(t => t.id===id ? {...t,image:img} : t));
+      const removeImage = (id) => setList(prev => prev.map(t => t.id===id ? {...t,image:null} : t));
+      const toggleTask = (id) => setList(prev => {
         const next = prev.map(t => t.id!==id ? t : t.endKw===selectedKw ? {...t,endKw:null} : {...t,endKw:selectedKw});
         const week = next.filter(t => t.startKw<=selectedKw && (t.endKw===null||t.endKw>=selectedKw));
         const justCompleted = next.find(t=>t.id===id)?.endKw===selectedKw;
@@ -806,22 +1222,22 @@
         }
         return next;
       });
-      const deleteTask = (id) => setTasks(prev => prev.filter(t => t.id!==id));
-      const moveTask = (taskId, qId) => setTasks(prev => prev.map(t => t.id===taskId ? {...t,quadrant:qId} : t));
-      // Insert dragged task before target task (also adopts target's quadrant)
-      const reorderTask = (dragId, targetId) => setTasks(prev => {
+      const deleteTask = (id) => setList(prev => prev.filter(t => t.id!==id));
+      const moveTask = (taskId, g) => setList(prev => prev.map(t => t.id===taskId ? {...t,[groupKey]:g} : t));
+      // Insert dragged task before target task (also adopts target's group)
+      const reorderTask = (dragId, targetId) => setList(prev => {
         const drag = prev.find(t=>t.id===dragId);
         if (!drag || dragId===targetId) return prev;
         const rest = prev.filter(t=>t.id!==dragId);
         const idx = rest.findIndex(t=>t.id===targetId);
         if (idx < 0) return prev;
-        return [...rest.slice(0,idx), {...drag, quadrant: rest[idx].quadrant}, ...rest.slice(idx)];
+        return [...rest.slice(0,idx), {...drag, [groupKey]: rest[idx][groupKey] ?? null}, ...rest.slice(idx)];
       });
       const postponeTask = (id) => {
-        const orig = tasks.find(t=>t.id===id)?.startKw;
+        const orig = list.find(t=>t.id===id)?.startKw;
         const target = Math.min(52, selectedKw+1);
-        setTasks(prev => prev.map(t => t.id===id ? {...t, startKw: target} : t));
-        addToast({ message:`Auf KW ${target} verschoben`, action:()=>setTasks(prev => prev.map(t => t.id===id ? {...t, startKw: orig} : t)) });
+        setList(prev => prev.map(t => t.id===id ? {...t, startKw: target} : t));
+        addToast({ message:`Auf KW ${target} verschoben`, action:()=>setList(prev => prev.map(t => t.id===id ? {...t, startKw: orig} : t)) });
       };
       // Kanban: move a task between To Do / Doing / Done for the selected week.
       // Done syncs with the Matrix completion (endKw); leaving Done re-opens the task.
@@ -830,8 +1246,39 @@
         if (target === 'done') return { ...t, endKw: selectedKw, status: 'done' };
         return { ...t, endKw: null, status: target };
       }));
-      const getQ = (qId) => tasks
-        .filter(t => t.quadrant===qId && t.startKw<=selectedKw && (t.endKw===null || t.endKw>=selectedKw))
+
+      // ── Kategorien ──
+      const addCategory = (name) => {
+        if (categories.some(c => c.name.toLowerCase() === name.toLowerCase())) { addToast({ type:'error', message:`„${name}" gibt es schon` }); return null; }
+        const id = newId();
+        setCategories(prev => [...prev, { id, name, color: CAT_COLORS[prev.length % CAT_COLORS.length] }]);
+        return id;
+      };
+      const renameCategory = (id, name) => setCategories(prev => prev.map(c => c.id===id ? {...c, name} : c));
+      const recolorCategory = (id, color) => setCategories(prev => prev.map(c => c.id===id ? {...c, color} : c));
+      const removeCategory = (id) => {
+        const idx = categories.findIndex(c => c.id===id); if (idx < 0) return;
+        const snap = categories[idx];
+        const affected = freeTasks.filter(t => t.cat===id).map(t => t.id);
+        setCategories(prev => prev.filter(c => c.id!==id));
+        setFreeTasks(prev => prev.map(t => t.cat===id ? {...t, cat:null} : t));
+        if (lastCat === id) setLastCat(null);
+        addToast({ message:`„${snap.name}" gelöscht`, action:()=>{
+          setCategories(prev => { const n = [...prev]; n.splice(Math.min(idx, n.length), 0, snap); return n; });
+          setFreeTasks(prev => prev.map(t => affected.includes(t.id) ? {...t, cat:id} : t));
+        }});
+      };
+
+      const importData = (p) => {
+        if (p.tasks) setTasks(p.tasks);
+        if (p.freeTasks) setFreeTasks(p.freeTasks);
+        if (p.categories) setCategories(p.categories);
+      };
+
+      const catIds = new Set(categories.map(c => c.id));
+      const inWeek = t => t.startKw<=selectedKw && (t.endKw===null || t.endKw>=selectedKw);
+      const getGroup = (gid) => list
+        .filter(t => (isFree ? (gid===null ? !catIds.has(t.cat) : t.cat===gid) : t.quadrant===gid) && (onlyOverdue ? isOverdue(t) : inWeek(t)))
         .map((t, i) => ({ t, i }))
         .sort((a, b) => {
           const doneA = a.t.endKw!==null && a.t.endKw<=selectedKw ? 1 : 0;
@@ -840,53 +1287,77 @@
         })
         .map(({ t }) => t);
 
-      const weekTasks = tasks.filter(t => t.startKw<=selectedKw && (t.endKw===null||t.endKw>=selectedKw));
-      const doneCount = tasks.filter(t=>t.endKw===selectedKw).length;
+      const overdueCount = list.filter(isOverdue).length;
+      useEffect(() => { if (overdueCount === 0) setOnlyOverdue(false); }, [overdueCount]);
+      useEffect(() => { setOnlyOverdue(false); }, [mode]);
+
+      const weekTasks = list.filter(inWeek);
+      const doneCount = list.filter(t=>t.endKw===selectedKw).length;
       const openCount = weekTasks.length - doneCount;
       const weekPct = weekTasks.length ? doneCount / weekTasks.length : 0;
 
-      const taskProps = { toggleTask, deleteTask, attachImageToTask, removeImage, moveTask, editTask, updateNotes, addToast, reorderTask, restoreTask, postponeTask };
-      const QUADS = [
-        {id:'q1', subtitle:'Wichtig & Dringend'},
-        {id:'q2', subtitle:'Wichtig & Nicht dringend'},
-        {id:'q3', subtitle:'Nicht wichtig & Dringend'},
-        {id:'q4', subtitle:'Nicht wichtig & Nicht dringend'},
-      ];
+      const groups = isFree
+        ? [...categories.map(c => ({ id:c.id, label:c.name, color:c.color })), { id:null, label:'Ohne Kategorie', color:'#a1a1aa' }]
+        : QUADS.map(q => ({ id:q.id, label:`${q.label} · ${q.subtitle}`, color:q.color }));
+      const metaOf = (t) => {
+        if (!isFree) return SEARCH_META[t.quadrant];
+        const c = categories.find(c => c.id===t.cat);
+        return c ? { l:c.name, c:'bg-neutral-100 dark:bg-neutral-800', style:{ color:c.color } } : { l:'Ohne Kategorie', c:'text-neutral-400 bg-neutral-100 dark:bg-neutral-800' };
+      };
 
-      const btnGhost = "p-2 text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-xl transition-colors";
+      const taskProps = { toggleTask, deleteTask, attachImageToTask, removeImage, moveTask, editTask, updateNotes, addToast, reorderTask, restoreTask, postponeTask, setDue, groups, groupKey };
+
+      const btnGhost = "p-2.5 md:p-2 text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-xl transition-colors";
+      const segBtn = (on) => `flex-1 md:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-[10px] text-sm font-medium transition-all ${on ? 'bg-white dark:bg-neutral-700 text-neutral-800 dark:text-neutral-100 shadow-sm' : 'text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200'}`;
 
       return (
-        <div className="flex h-screen bg-neutral-100 dark:bg-neutral-950 overflow-hidden text-neutral-800 dark:text-neutral-100">
-          <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="flex app-root bg-neutral-100 dark:bg-neutral-950 overflow-hidden text-neutral-800 dark:text-neutral-100">
+          <div className="flex-1 flex flex-col overflow-hidden min-w-0">
 
             {/* Header */}
-            <header className="shrink-0 bg-white/80 dark:bg-neutral-900/80 backdrop-blur-md border-b border-neutral-200 dark:border-neutral-800 px-5 py-2.5 flex items-center gap-3 z-20">
+            <header className="shrink-0 bg-white/80 dark:bg-neutral-900/80 backdrop-blur-md border-b border-neutral-200 dark:border-neutral-800 px-3 sm:px-5 py-2 sm:py-2.5 safe-top flex flex-wrap items-center gap-x-3 gap-y-2 z-20">
               <div className="flex items-center gap-2.5 shrink-0">
                 <Logo size={28}/>
-                <span className="font-display font-bold text-lg tracking-tight text-neutral-900 dark:text-white">Prio<span className="text-blue-500">Matrix</span></span>
+                <span className="hidden sm:inline font-display font-bold text-lg tracking-tight text-neutral-900 dark:text-white">Prio<span className="text-blue-500">Matrix</span></span>
               </div>
 
-              <div className="w-px h-6 bg-neutral-200 dark:bg-neutral-700 shrink-0"/>
+              <div className="hidden md:block w-px h-6 bg-neutral-200 dark:bg-neutral-700 shrink-0"/>
 
-              <button onClick={()=>goToWeek(currentKw)} className="flex items-center gap-2 shrink-0 group" title="Zur aktuellen Woche">
+              {/* Woche: Desktop */}
+              <button onClick={()=>goToWeek(currentKw)} className="hidden md:flex items-center gap-2 shrink-0 group" title="Zur aktuellen Woche">
                 <Ic n="cal" size={15} cls="text-neutral-400"/>
                 <span className="font-display font-semibold text-neutral-800 dark:text-neutral-100">KW {selectedKw}</span>
-                <span className="text-xs text-neutral-400 hidden md:inline">{weekDateRange(selectedKw)}</span>
+                <span className="text-xs text-neutral-400 hidden lg:inline">{weekDateRange(selectedKw)}</span>
                 {selectedKw===currentKw
                   ? <span className="text-[11px] px-2 py-0.5 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-full font-medium">Aktuell</span>
                   : <span className="text-[11px] px-2 py-0.5 bg-neutral-100 dark:bg-neutral-800 text-neutral-500 rounded-full font-medium group-hover:bg-neutral-200 dark:group-hover:bg-neutral-700 transition-colors">→ KW {currentKw}</span>}
               </button>
 
-              <div className="w-px h-6 bg-neutral-200 dark:bg-neutral-700 shrink-0"/>
+              {/* Woche: Handy (Pfeile + Wochenliste als Schublade) */}
+              <div className="flex md:hidden items-center shrink-0">
+                <button onClick={()=>goToWeek(Math.max(1,selectedKw-1))} className={btnGhost} aria-label="Vorherige Woche"><Ic n="chevLeft" size={16}/></button>
+                <button onClick={()=>setShowWeeks(true)} className="flex flex-col items-center leading-tight px-1 min-w-[64px]">
+                  <span className="font-display font-semibold text-sm">KW {selectedKw}</span>
+                  <span className={`text-[10px] ${selectedKw===currentKw ? 'text-blue-500 font-medium' : 'text-neutral-400'}`}>{selectedKw===currentKw ? 'Aktuell' : weekDateRange(selectedKw)}</span>
+                </button>
+                <button onClick={()=>goToWeek(Math.min(52,selectedKw+1))} className={btnGhost} aria-label="Nächste Woche"><Ic n="chevRight" size={16}/></button>
+              </div>
 
-              <div className="flex items-center gap-0.5 bg-neutral-100 dark:bg-neutral-800 rounded-xl p-0.5 shrink-0">
-                {[{k:'matrix',l:'Matrix'},{k:'kanban',l:'Kanban'}].map(tab => (
-                  <button key={tab.k} onClick={()=>setView(tab.k)}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-[10px] text-sm font-medium transition-all
-                      ${view===tab.k ? 'bg-white dark:bg-neutral-700 text-neutral-800 dark:text-neutral-100 shadow-sm' : 'text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200'}`}>
-                    {tab.l}
-                  </button>
-                ))}
+              <div className="hidden md:block w-px h-6 bg-neutral-200 dark:bg-neutral-700 shrink-0"/>
+
+              {/* Modus + Ansicht */}
+              <div className="order-last w-full md:order-none md:w-auto flex items-center gap-2">
+                <div className="flex flex-1 md:flex-none items-center gap-0.5 bg-neutral-100 dark:bg-neutral-800 rounded-xl p-0.5">
+                  <button onClick={()=>setMode('matrix')} className={segBtn(!isFree)}>Matrix</button>
+                  <button onClick={()=>setMode('free')} className={segBtn(isFree)}>Kategorien</button>
+                </div>
+                {!isFree && (
+                  <div className="flex items-center gap-0.5 bg-neutral-100 dark:bg-neutral-800 rounded-xl p-0.5 shrink-0">
+                    {[{k:'matrix',l:'Raster'},{k:'kanban',l:'Kanban'}].map(tab => (
+                      <button key={tab.k} onClick={()=>setView(tab.k)} className={segBtn(view===tab.k)}>{tab.l}</button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="flex-1"/>
@@ -906,8 +1377,17 @@
               )}
 
               <div className="flex items-center gap-1">
+                {overdueCount > 0 && (
+                  <button onClick={()=>setOnlyOverdue(o=>!o)} title="Überfällige Aufgaben"
+                    className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-sm font-semibold tabular-nums transition-colors ${onlyOverdue ? 'bg-rose-500 text-white' : 'bg-rose-50 dark:bg-rose-500/15 text-rose-600 dark:text-rose-400'}`}>
+                    <Ic n="alert" size={14}/>{overdueCount}
+                  </button>
+                )}
+                {notifPerm === 'default' && (
+                  <button onClick={enableNotifications} title="Erinnerungen aktivieren" className={btnGhost}><Ic n="bell" size={15}/></button>
+                )}
                 <button onClick={()=>setShowSearch(true)} title="Suchen (⌘K)"
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-xl transition-colors">
+                  className="flex items-center gap-1.5 px-2.5 py-2 md:py-1.5 text-sm text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-xl transition-colors">
                   <Ic n="search" size={15}/>
                   <kbd className="hidden md:inline text-[11px] bg-neutral-100 dark:bg-neutral-800 px-1.5 py-0.5 rounded-md font-mono text-neutral-400">⌘K</kbd>
                 </button>
@@ -916,10 +1396,30 @@
               </div>
             </header>
 
-            {/* Matrix + axes, or Kanban */}
-            <main className="flex-1 overflow-hidden dot-grid p-4">
-              {view === 'matrix' ? (
-                <div className="h-full flex gap-2">
+            {/* Erinnerungs-Leiste */}
+            {onlyOverdue ? (
+              <div className="shrink-0 flex items-center gap-2 px-4 py-2 bg-rose-50 dark:bg-rose-500/10 text-rose-700 dark:text-rose-300 text-sm anim-slide">
+                <Ic n="alert" size={15}/><span className="flex-1">Nur überfällige Aufgaben ({overdueCount})</span>
+                <button onClick={()=>setOnlyOverdue(false)} className="font-semibold underline underline-offset-2">Alle zeigen</button>
+              </div>
+            ) : banner && overdueCount > 0 && (
+              <div className="shrink-0 flex items-center gap-2 px-4 py-2 bg-rose-50 dark:bg-rose-500/10 text-rose-700 dark:text-rose-300 text-sm anim-slide">
+                <Ic n="alert" size={15} cls="shrink-0"/>
+                <span className="flex-1 min-w-0">{overdueCount === 1 ? '1 Aufgabe ist überfällig' : `${overdueCount} Aufgaben sind überfällig`}</span>
+                {notifPerm === 'default' && <button onClick={enableNotifications} className="font-semibold underline underline-offset-2 shrink-0">Erinnern</button>}
+                <button onClick={()=>setOnlyOverdue(true)} className="font-semibold underline underline-offset-2 shrink-0">Anzeigen</button>
+                <button onClick={()=>setBanner(false)} className="p-1 -mr-1 shrink-0 opacity-60 hover:opacity-100"><Ic n="x" size={14}/></button>
+              </div>
+            )}
+
+            {/* Board / Matrix / Kanban */}
+            <main className={`flex-1 overflow-y-auto ${isFree ? '' : 'md:overflow-hidden'} dot-grid p-3 md:p-4`}>
+              {isFree ? (
+                <CategoryBoard categories={categories} getGroup={getGroup} selectedKw={selectedKw} currentKw={currentKw}
+                  addTaskTo={addTaskTo} addCategory={addCategory} renameCategory={renameCategory} recolorCategory={recolorCategory} removeCategory={removeCategory}
+                  taskProps={taskProps} onlyOverdue={onlyOverdue}/>
+              ) : view === 'matrix' ? (
+                <div className="md:h-full flex gap-2">
                   {/* Vertical axis: Wichtigkeit */}
                   <div className="hidden md:flex flex-col items-center justify-between py-1 shrink-0 w-6 text-[10px] font-semibold uppercase tracking-widest text-neutral-400 dark:text-neutral-600">
                     <div className="flex items-center gap-1 text-rose-400 dark:text-rose-500"><Ic n="chevUp" size={12}/></div>
@@ -934,9 +1434,9 @@
                       <Ic n="arrowRight" size={12} cls="text-rose-400 dark:text-rose-500"/>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3 flex-1 min-h-0">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:flex-1 md:min-h-0">
                       {QUADS.map(q => (
-                        <Quadrant key={q.id} id={q.id} subtitle={q.subtitle} tasks={getQ(q.id)} selectedKw={selectedKw} currentKw={currentKw} addTask={addTask} {...taskProps}/>
+                        <Quadrant key={q.id} id={q.id} subtitle={q.subtitle} tasks={getGroup(q.id)} selectedKw={selectedKw} currentKw={currentKw} addTask={addTask} {...taskProps}/>
                       ))}
                     </div>
                   </div>
@@ -946,13 +1446,18 @@
                   deleteTask={deleteTask} restoreTask={restoreTask} addToast={addToast} updateNotes={updateNotes}/>
               )}
             </main>
+
+            {isFree && <QuickAdd categories={categories} lastCat={lastCat} setLastCat={setLastCat} onSubmit={quickSubmit} addCategory={addCategory}/>}
           </div>
 
-          <WeekSidebar selectedKw={selectedKw} currentKw={currentKw} tasks={tasks} onSelect={goToWeek} scrollRef={scrollRef}/>
+          {showWeeks && <div className="fixed inset-0 z-30 bg-black/40 md:hidden anim-fade" onClick={()=>setShowWeeks(false)}/>}
+          <WeekSidebar selectedKw={selectedKw} currentKw={currentKw} tasks={list} scrollRef={scrollRef}
+            onSelect={w=>{ goToWeek(w); setShowWeeks(false); }} onClose={()=>setShowWeeks(false)}
+            className={`${showWeeks ? 'fixed inset-y-0 right-0 z-40 flex shadow-2xl' : 'hidden'} md:static md:flex md:shadow-none md:z-auto`}/>
 
-          {showSearch && <SearchOverlay tasks={tasks} onClose={()=>setShowSearch(false)} onJump={t=>{ goToWeek(t.startKw); setShowSearch(false); }}/>}
-          {showBackup && <BackupPanel tasks={tasks} onImport={setTasks} onClose={()=>setShowBackup(false)} addToast={addToast} selectedKw={selectedKw}/>}
-          <Toast toasts={toasts} dismiss={dismissToast}/>
+          {showSearch && <SearchOverlay tasks={list} metaOf={metaOf} onClose={()=>setShowSearch(false)} onJump={t=>{ goToWeek(t.startKw); setShowSearch(false); }}/>}
+          {showBackup && <BackupPanel mode={mode} tasks={tasks} freeTasks={freeTasks} categories={categories} onImport={importData} onClose={()=>setShowBackup(false)} addToast={addToast} selectedKw={selectedKw}/>}
+          <Toast toasts={toasts} dismiss={dismissToast} lift={isFree}/>
         </div>
       );
     }
