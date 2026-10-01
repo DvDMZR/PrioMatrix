@@ -39,7 +39,7 @@
     /* Touch-Geräte: Aktionen immer sichtbar, größere Tippflächen */
     @media (pointer: coarse) {
       .act-row { opacity: 1 !important; }
-      .act-row button { padding: 0.5rem !important; }
+      .act-row button { min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
       .chk { padding: 0.25rem; margin: -0.25rem; }
     }
     /* iOS zoomt bei Eingabefeldern < 16px */
@@ -215,6 +215,19 @@
       });
       return { text: words.join(' '), cat, due };
     };
+
+    const MOBILE_Q = '(max-width: 767px)';
+    const isMobileNow = () => typeof matchMedia === 'function' && matchMedia(MOBILE_Q).matches;
+    const useMobile = () => {
+      const [m, setM] = useState(isMobileNow);
+      useEffect(() => {
+        const mq = matchMedia(MOBILE_Q); const f = () => setM(mq.matches);
+        mq.addEventListener('change', f); return () => mq.removeEventListener('change', f);
+      }, []);
+      return m;
+    };
+    const isDoneT = (t, kw) => t.endKw !== null && t.endKw <= kw;
+    const readLS = (k, fb) => { try { const v = localStorage.getItem(k); return v === null ? fb : JSON.parse(v); } catch { return fb; } };
 
     const CAT_COLORS = ['#f43f5e','#f97316','#f59e0b','#10b981','#14b8a6','#3b82f6','#6366f1','#8b5cf6','#ec4899','#71717a'];
     const CAT_SUGGEST = ['Haushalt','Gartenarbeit','Einkauf','Arbeit','Familie','Termine'];
@@ -482,8 +495,162 @@
       </div>
     );
 
+    // ── Wischen: rechts = erledigt, links = Details ────────────────
+    const SwipeRow = ({ children, done, onRight, onLeft }) => {
+      const [dx, setDx] = useState(0);
+      const st = useRef(null);
+      const TH = 90;
+      const start = e => { const t = e.touches[0]; st.current = { x: t.clientX, y: t.clientY, lock: null }; };
+      const move = e => {
+        const s0 = st.current; if (!s0) return;
+        const t = e.touches[0]; const mx = t.clientX - s0.x, my = t.clientY - s0.y;
+        if (s0.lock === null) {
+          if (Math.abs(mx) > 10 && Math.abs(mx) > Math.abs(my) * 1.5) s0.lock = 'h';
+          else if (Math.abs(my) > 10) s0.lock = 'v';
+        }
+        if (s0.lock === 'h') setDx(Math.max(-140, Math.min(140, mx)));
+      };
+      const end = () => {
+        const s0 = st.current; st.current = null;
+        if (s0?.lock === 'h') {
+          if (dx >= TH) { try { navigator.vibrate?.(15); } catch {} onRight(); }
+          else if (dx <= -TH) onLeft();
+        }
+        setDx(0);
+      };
+      return (
+        <div className="relative rounded-xl overflow-hidden anim-slide">
+          <div style={{ opacity: dx === 0 ? 0 : 1 }} className={`absolute inset-0 flex items-center justify-between px-5 text-sm font-semibold ${dx >= 0 ? 'bg-emerald-500 text-white' : 'bg-blue-500 text-white'}`}>
+            <span className="flex items-center gap-2"><Ic n="check" size={20}/>{done ? 'Wieder öffnen' : 'Erledigt'}</span>
+            <span className="flex items-center gap-2">Details<Ic n="dots" size={20}/></span>
+          </div>
+          <div onTouchStart={start} onTouchMove={move} onTouchEnd={end} onTouchCancel={()=>{ st.current = null; setDx(0); }}
+            style={{ transform: `translateX(${dx}px)`, transition: dx === 0 ? 'transform .2s ease' : 'none', touchAction: 'pan-y' }}>
+            {children}
+          </div>
+        </div>
+      );
+    };
+
+    // ── "N erledigt anzeigen" ──────────────────────────────────────
+    const DoneRow = ({ count, open, onToggle }) => count > 0 ? (
+      <button onClick={onToggle} className="w-full min-h-[44px] flex items-center justify-center gap-1.5 text-xs font-medium text-neutral-500 dark:text-neutral-400 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
+        <Ic n={open ? 'chevUp' : 'chevDown'} size={14}/>{open ? 'Erledigte ausblenden' : `${count} erledigt anzeigen`}
+      </button>
+    ) : null;
+
+    // ── Task-Details (Bottom-Sheet) ────────────────────────────────
+    const SheetLabel = ({ children }) => <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400 mb-2 mt-4">{children}</p>;
+    const TaskSheet = ({ task, groups, groupKey, selectedKw, onClose, editTask, updateNotes, setDue, moveTask, toggleTask, postponeTask, deleteTask, restoreTask, addToast, attachImageToTask, removeImage }) => {
+      const [text, setText] = useState(task.text);
+      const [notes, setNotes] = useState(task.notes || '');
+      const [lightbox, setLightbox] = useState(false);
+      const fileRef = useRef(null);
+      const done = isDoneT(task, selectedKw);
+      const commit = () => {
+        const t = text.trim();
+        if (t && t !== task.text) editTask(task.id, t);
+        if (notes !== (task.notes || '')) updateNotes(task.id, notes);
+      };
+      const close = () => { commit(); onClose(); };
+      const chip = on => `px-4 min-h-[44px] rounded-xl text-sm font-medium transition-colors flex items-center gap-2 ${on ? 'bg-blue-500 text-white' : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-200 active:bg-neutral-200 dark:active:bg-neutral-700'}`;
+      const big = "w-full min-h-[52px] rounded-xl text-[15px] font-medium flex items-center justify-center gap-2 transition-colors";
+      const handleFile = async (e) => {
+        const f = e.target.files[0];
+        if (f?.type.startsWith('image/')) attachImageToTask(task.id, await resizeImage(f));
+        if (fileRef.current) fileRef.current.value = '';
+      };
+      const doDelete = () => {
+        const snap = { ...task };
+        deleteTask(task.id); onClose();
+        addToast({ message:'Aufgabe gelöscht', action:()=>restoreTask(snap) });
+      };
+      const tomorrow = addDays(todayStr(), 1);
+      return (
+        <div className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm anim-fade flex items-end justify-center" onClick={close}>
+          <div className="bg-white dark:bg-neutral-900 rounded-t-3xl shadow-2xl w-full max-w-lg max-h-[92dvh] overflow-y-auto px-4 pt-2 safe-bottom pb-4 anim-slide" onClick={e=>e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400 pt-3">Aufgabe</span>
+              <button onClick={close} aria-label="Schließen" className="w-11 h-11 -mr-2 flex items-center justify-center rounded-xl text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"><Ic n="x" size={18}/></button>
+            </div>
+            <textarea value={text} onChange={e=>setText(e.target.value)} rows={2}
+              className="w-full resize-none bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-xl px-3 py-2.5 text-neutral-800 dark:text-neutral-100 outline-none focus:border-blue-400"/>
+
+            <SheetLabel>Zieldatum</SheetLabel>
+            <div className="flex flex-wrap gap-2">
+              <button className={chip(task.due === todayStr())} onClick={()=>setDue(task.id, todayStr())}>Heute</button>
+              <button className={chip(task.due === tomorrow)} onClick={()=>setDue(task.id, tomorrow)}>Morgen</button>
+              <button className={chip(task.due === nextMonday())} onClick={()=>setDue(task.id, nextMonday())}>Nächste Woche</button>
+              {task.due && <button className={chip(false)+' !text-rose-500'} onClick={()=>setDue(task.id, null)}>Kein Datum</button>}
+            </div>
+            <input type="date" value={task.due || ''} onChange={e=>setDue(task.id, e.target.value || null)}
+              className="mt-2 w-full min-h-[44px] bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-xl px-3 text-neutral-700 dark:text-neutral-200 outline-none focus:border-blue-400"/>
+
+            <SheetLabel>{groupKey === 'cat' ? 'Kategorie' : 'Quadrant'}</SheetLabel>
+            <div className="flex flex-wrap gap-2">
+              {groups.map(g => (
+                <button key={String(g.id)} className={chip((task[groupKey] ?? null) === g.id)} onClick={()=>moveTask(task.id, g.id)}>
+                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: g.color }}/>{g.short || g.label}
+                </button>
+              ))}
+            </div>
+
+            <SheetLabel>Notiz</SheetLabel>
+            <textarea value={notes} onChange={e=>setNotes(e.target.value)} rows={3} placeholder="Notizen, Details, Links…"
+              className="w-full resize-none bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-xl px-3 py-2.5 text-neutral-700 dark:text-neutral-200 outline-none focus:border-blue-400 placeholder-neutral-400"/>
+
+            <SheetLabel>Bild</SheetLabel>
+            {task.image ? (
+              <div className="flex items-center gap-3">
+                <img src={task.image} alt="" onClick={()=>setLightbox(true)} className="h-24 rounded-xl border border-neutral-200 dark:border-neutral-700 object-contain"/>
+                <button onClick={()=>removeImage(task.id)} className={chip(false)}>Bild entfernen</button>
+              </div>
+            ) : (
+              <button onClick={()=>fileRef.current?.click()} className={chip(false)}><Ic n="image" size={16}/> Bild hinzufügen</button>
+            )}
+            <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFile}/>
+
+            <div className="mt-5 space-y-2.5">
+              <button onClick={()=>{ commit(); toggleTask(task.id); onClose(); }}
+                className={`${big} ${done ? 'bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-200' : 'bg-emerald-500 text-white active:bg-emerald-600'}`}>
+                <Ic n="check" size={18}/>{done ? 'Wieder öffnen' : 'Erledigt'}
+              </button>
+              {!done && selectedKw < 52 && (
+                <button onClick={()=>{ commit(); postponeTask(task.id); onClose(); }} className={`${big} bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-200`}><Ic n="arrowRight" size={18}/> Auf nächste Woche</button>
+              )}
+            </div>
+            <button onClick={doDelete} className={`${big} mt-8 bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400`}><Ic n="trash" size={18}/> Aufgabe löschen</button>
+          </div>
+          {lightbox && task.image && <Lightbox src={task.image} onClose={()=>setLightbox(false)}/>}
+        </div>
+      );
+    };
+
+    // ── Menü (Handy): selten genutzte Aktionen ─────────────────────
+    const MenuSheet = ({ dark, setDark, notifPerm, enableNotifications, openBackup, onClose }) => {
+      const row = "w-full min-h-[52px] px-4 flex items-center gap-3 rounded-xl text-[15px] font-medium text-neutral-700 dark:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800 text-left";
+      return (
+        <div className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm anim-fade flex items-end justify-center" onClick={onClose}>
+          <div className="bg-white dark:bg-neutral-900 rounded-t-3xl shadow-2xl w-full max-w-lg p-3 safe-bottom anim-slide" onClick={e=>e.stopPropagation()}>
+            {notifPerm === 'default' && <button className={row} onClick={()=>{ enableNotifications(); onClose(); }}><Ic n="bell" size={18}/> Erinnerungen aktivieren</button>}
+            <button className={row} onClick={()=>{ onClose(); openBackup(); }}><Ic n="db" size={18}/> Backup &amp; Daten</button>
+            <button className={row} onClick={()=>{ setDark(d=>!d); onClose(); }}><Ic n={dark?'sun':'moon'} size={18}/> {dark ? 'Heller Modus' : 'Dunkler Modus'}</button>
+          </div>
+        </div>
+      );
+    };
+
+    // ── "Heute": überfällig + heute fällig, über alle Gruppen ───────
+    const TodayList = ({ tasks, tagOf, taskProps, selectedKw }) => tasks.length === 0 ? (
+      <div className="text-center py-16 text-neutral-400"><p className="text-3xl mb-2">🎉</p><p className="text-sm">Nichts fällig oder überfällig.</p></div>
+    ) : (
+      <div className="space-y-2 max-w-xl mx-auto pb-4">
+        {tasks.map(t => <TaskItem key={t.id} task={t} isCompleted={false} selectedKw={selectedKw} currentKw={selectedKw} accentDot="" tag={tagOf(t)} {...taskProps}/>)}
+      </div>
+    );
+
     // ── TaskItem ───────────────────────────────────────────────────
-    const TaskItem = ({ task, isCompleted, accentDot, groups, groupKey, moveTask, setDue, toggleTask, deleteTask, attachImageToTask, removeImage, editTask, updateNotes, addToast, currentKw, selectedKw, reorderTask, restoreTask, postponeTask }) => {
+    const TaskItem = ({ task, isCompleted, accentDot, mobile, openSheet, tag, groups, groupKey, moveTask, setDue, toggleTask, deleteTask, attachImageToTask, removeImage, editTask, updateNotes, addToast, currentKw, selectedKw, reorderTask, restoreTask, postponeTask }) => {
       const [dropOver, setDropOver] = useState(false);
       const [dragging, setDragging] = useState(false);
       const [editing, setEditing] = useState(false);
@@ -522,6 +689,36 @@
         deleteTask(task.id);
         addToast({ message:'Aufgabe gelöscht', action:()=>restoreTask(snap) });
       };
+
+      if (mobile) {
+        return (
+          <SwipeRow done={isCompleted} onRight={()=>toggleTask(task.id)} onLeft={()=>openSheet(task.id)}>
+            <div className={`flex items-center pl-0.5 pr-0.5 min-h-[60px] rounded-xl border bg-white dark:bg-neutral-800 ${isCompleted ? 'border-neutral-200/70 dark:border-neutral-700/60 opacity-60' : 'border-neutral-200 dark:border-neutral-700'}`}>
+              <button onClick={()=>toggleTask(task.id)} aria-label={isCompleted ? 'Wieder öffnen' : 'Erledigt'}
+                className={`shrink-0 w-12 h-12 flex items-center justify-center rounded-full ${isCompleted ? 'text-emerald-500' : 'text-neutral-300 dark:text-neutral-600 active:text-emerald-500'}`}>
+                <Ic n={isCompleted ? 'check' : 'circle'} size={26}/>
+              </button>
+              <button onClick={()=>openSheet(task.id)} className="flex-1 min-w-0 text-left py-2.5 pr-1">
+                <span className={`block text-[15px] leading-snug line-clamp-2 break-words ${isCompleted ? 'text-neutral-400 dark:text-neutral-500 line-through' : 'text-neutral-800 dark:text-neutral-100'}`}>{task.text}</span>
+                {(task.due || carriedOver || task.notes || task.image || tag) && (
+                  <span className="flex flex-wrap items-center gap-1.5 mt-1">
+                    {tag && <span className="inline-flex items-center gap-1 text-[11px] font-medium text-neutral-500 dark:text-neutral-400"><span className="w-2 h-2 rounded-full" style={{ background: tag.color }}/>{tag.label}</span>}
+                    {task.due && (
+                      <span className={`inline-flex items-center gap-1 whitespace-nowrap text-[11px] font-medium px-1.5 py-0.5 rounded-md ${overdue ? 'text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-500/10' : dueToday ? 'text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-500/10' : 'text-neutral-500 dark:text-neutral-400 bg-neutral-100 dark:bg-neutral-700/50'}`}>
+                        <Ic n={overdue?'alert':'cal'} size={10}/>{overdue ? 'Überfällig · ' : ''}{fmtDue(task.due)}
+                      </span>
+                    )}
+                    {carriedOver && <span className="text-[10px] font-medium text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10 px-1.5 py-0.5 rounded-md">seit KW {task.startKw}</span>}
+                    {task.notes && <Ic n="note" size={11} cls="text-neutral-400"/>}
+                    {task.image && <Ic n="image" size={11} cls="text-neutral-400"/>}
+                  </span>
+                )}
+              </button>
+              <button onClick={()=>openSheet(task.id)} aria-label="Details" className="shrink-0 w-11 h-11 flex items-center justify-center rounded-xl text-neutral-400 active:bg-neutral-100 dark:active:bg-neutral-700"><Ic n="dots" size={18}/></button>
+            </div>
+          </SwipeRow>
+        );
+      }
 
       return (
         <>
@@ -637,14 +834,16 @@
         return <span key={i}>{w}</span>;
       });
 
-    const Quadrant = ({ id, subtitle, tasks, selectedKw, currentKw, addTask, ...rest }) => {
+    const Quadrant = ({ id, subtitle, tasks, selectedKw, currentKw, addTask, showDone, ...rest }) => {
       const [input, setInput] = useState('');
+      const [openDone, setOpenDone] = useState(false);
       const [dropOver, setDropOver] = useState(false);
       const [focused, setFocused] = useState(false);
       const fileRef = useRef(null);
       const s = Q_STYLE[id];
       const done = tasks.filter(t=>t.endKw!==null && t.endKw<=selectedKw).length;
       const pct = tasks.length ? done / tasks.length : 0;
+      const shown = (showDone || openDone) ? tasks : tasks.filter(t => !isDoneT(t, selectedKw));
 
       const doAdd = () => { if(input.trim()){ const p = parseQuick(input, []); addTask(id, p.text || input, null, p.due); setInput(''); } };
       const handlePaste = async (e) => {
@@ -706,19 +905,25 @@
                 <Ic n={s.icon} size={28} sw={1.5}/>
                 <p className="text-xs text-center leading-relaxed">Noch nichts hier.<br/>Tippen, ziehen oder einfügen.</p>
               </label>
-            ) : tasks.map(t => (
-              <TaskItem key={t.id} task={t} isCompleted={t.endKw!==null && t.endKw<=selectedKw} selectedKw={selectedKw} currentKw={currentKw} accentDot={s.dot} addTask={addTask} {...rest}/>
-            ))}
+            ) : (
+              <>
+                {shown.length === 0 && <p className="text-xs text-neutral-400 dark:text-neutral-600 text-center py-4">Alles erledigt 🎉</p>}
+                {shown.map(t => (
+                  <TaskItem key={t.id} task={t} isCompleted={isDoneT(t, selectedKw)} selectedKw={selectedKw} currentKw={currentKw} accentDot={s.dot} addTask={addTask} {...rest}/>
+                ))}
+                {!showDone && <DoneRow count={done} open={openDone} onToggle={()=>setOpenDone(o=>!o)}/>}
+              </>
+            )}
           </div>
 
           {/* Input */}
           <div className={`pl-4 pr-3 py-2.5 bg-white/70 dark:bg-neutral-900/60 backdrop-blur-sm border-t border-neutral-200/60 dark:border-neutral-800 flex items-center gap-1.5 shrink-0 transition-colors ${focused ? 'bg-white dark:bg-neutral-900' : ''}`}>
-            <button onClick={doAdd} className={`p-1 rounded-lg ${s.accent} ${s.btn} transition-colors shrink-0`}><Ic n="plus" size={16}/></button>
+            <button onClick={doAdd} className={`w-11 h-11 md:w-auto md:h-auto md:p-1 flex items-center justify-center rounded-lg ${s.accent} ${s.btn} transition-colors shrink-0`}><Ic n="plus" size={18}/></button>
             <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&doAdd()} onPaste={handlePaste}
               onFocus={()=>setFocused(true)} onBlur={()=>setFocused(false)}
               placeholder={focused ? "Aufgabe… (⏎ · Strg+V für Bild)" : "Neue Aufgabe…"}
               className="flex-1 bg-transparent text-sm text-neutral-700 dark:text-neutral-200 placeholder-neutral-400 dark:placeholder-neutral-600 outline-none min-w-0 py-1"/>
-            <button onClick={()=>fileRef.current?.click()} title="Bild" className={`p-1 rounded-lg text-neutral-400 ${s.btn} transition-colors shrink-0`}><Ic n="image" size={15}/></button>
+            <button onClick={()=>fileRef.current?.click()} title="Bild" className={`w-11 h-11 md:w-auto md:h-auto md:p-1 flex items-center justify-center rounded-lg text-neutral-400 ${s.btn} transition-colors shrink-0`}><Ic n="image" size={15}/></button>
             <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFile}/>
           </div>
         </div>
@@ -898,12 +1103,12 @@
             <input value={name} autoFocus={autoFocus} onChange={e=>setName(e.target.value)} onKeyDown={e=>e.key==='Enter'&&submit()}
               placeholder="Neue Kategorie…" enterKeyHint="done"
               className="flex-1 min-w-0 bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-xl px-3 py-2 text-sm text-neutral-700 dark:text-neutral-200 outline-none focus:border-blue-400 placeholder-neutral-400"/>
-            <button onClick={submit} className="p-2.5 rounded-xl bg-blue-500 hover:bg-blue-600 text-white transition-colors shrink-0"><Ic n="plus" size={16}/></button>
+            <button onClick={submit} className="w-11 h-11 flex items-center justify-center rounded-xl bg-blue-500 hover:bg-blue-600 text-white transition-colors shrink-0"><Ic n="plus" size={16}/></button>
           </div>
           {!compact && sugg.length > 0 && (
             <div className="flex flex-wrap gap-1.5 mt-2.5">
               {sugg.map(n => (
-                <button key={n} onClick={()=>onAdd(n)} className="px-2.5 py-1.5 rounded-full text-xs font-medium bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-600 dark:text-neutral-300 transition-colors">+ {n}</button>
+                <button key={n} onClick={()=>onAdd(n)} className="px-3.5 min-h-[44px] md:min-h-0 md:px-2.5 md:py-1.5 rounded-full text-xs font-medium bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-600 dark:text-neutral-300 transition-colors">+ {n}</button>
               ))}
             </div>
           )}
@@ -912,14 +1117,16 @@
     };
 
     // ── Kategorie-Karte ────────────────────────────────────────────
-    const CategoryCard = ({ cat, tasks, selectedKw, currentKw, onAdd, onRename, onRecolor, onRemove, taskProps }) => {
+    const CategoryCard = ({ cat, tasks, selectedKw, currentKw, onAdd, onRename, onRecolor, onRemove, taskProps, showDone, collapsed, onToggleCollapse }) => {
       const [input, setInput] = useState('');
+      const [openDone, setOpenDone] = useState(false);
       const [menu, setMenu] = useState(false);
       const [name, setName] = useState(null);
       const [dropOver, setDropOver] = useState(false);
       const fileRef = useRef(null);
       const color = cat ? cat.color : '#a1a1aa';
-      const done = tasks.filter(t => t.endKw !== null && t.endKw <= selectedKw).length;
+      const done = tasks.filter(t => isDoneT(t, selectedKw)).length;
+      const shown = (showDone || openDone) ? tasks : tasks.filter(t => !isDoneT(t, selectedKw));
 
       const doAdd = () => { if (input.trim()) { onAdd(input, null); setInput(''); } };
       const handlePaste = async (e) => {
@@ -945,39 +1152,45 @@
           onDragLeave={e=>{ if(!e.currentTarget.contains(e.relatedTarget)) setDropOver(false); }} onDrop={handleDrop}
           className={`relative flex flex-col rounded-2xl overflow-hidden card-shadow border border-neutral-200/70 dark:border-neutral-800 bg-white/60 dark:bg-neutral-900/50 transition-all ${dropOver ? 'ring-2 ring-blue-400' : ''}`}>
           <div className="absolute left-0 top-0 bottom-0 w-1" style={{ background: color }}/>
-          <div className="pl-5 pr-2 py-2.5 flex items-center gap-2 border-b border-neutral-200/60 dark:border-neutral-800" style={{ background: color + '1f' }}>
+          <div className="pl-3 pr-2 py-1 md:py-2.5 flex items-center gap-1 border-b border-neutral-200/60 dark:border-neutral-800" style={{ background: color + '1f' }}>
+            <button onClick={onToggleCollapse} aria-label={collapsed ? 'Aufklappen' : 'Zuklappen'} className="w-10 h-11 md:w-8 md:h-9 flex items-center justify-center rounded-xl text-neutral-500 hover:bg-black/5 dark:hover:bg-white/10 shrink-0"><Ic n={collapsed ? 'chevRight' : 'chevDown'} size={16}/></button>
             {name !== null ? (
               <input autoFocus value={name} onChange={e=>setName(e.target.value)} onBlur={commitName}
                 onKeyDown={e=>{ if(e.key==='Enter') commitName(); if(e.key==='Escape') setName(null); }}
                 className="flex-1 min-w-0 bg-white/80 dark:bg-neutral-800 rounded-lg px-2 py-1 font-display font-semibold outline-none border border-blue-300"/>
             ) : (
-              <h3 onClick={()=>cat && setName(cat.name)} title={cat ? 'Umbenennen' : ''}
-                className={`flex-1 min-w-0 truncate font-display text-[17px] font-semibold ${cat ? 'cursor-text' : 'text-neutral-500'}`}>{cat ? cat.name : 'Ohne Kategorie'}</h3>
+              <h3 onClick={()=>{ if (isMobileNow()) onToggleCollapse(); else if (cat) setName(cat.name); }} title={cat ? 'Umbenennen' : ''}
+                className={`flex-1 min-w-0 truncate font-display text-[17px] font-semibold py-2 ${cat ? 'md:cursor-text' : 'text-neutral-500'}`}>{cat ? cat.name : 'Ohne Kategorie'}</h3>
             )}
             {tasks.length > 0 && <span className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 tabular-nums shrink-0">{done}/{tasks.length}</span>}
-            {cat && <button onClick={()=>setMenu(m=>!m)} className="p-2 rounded-xl text-neutral-400 hover:bg-black/5 dark:hover:bg-white/10 shrink-0" title="Kategorie bearbeiten"><Ic n="dots" size={16}/></button>}
+            {cat && <button onClick={()=>setMenu(m=>!m)} className="w-11 h-11 md:w-9 md:h-9 flex items-center justify-center rounded-xl text-neutral-400 hover:bg-black/5 dark:hover:bg-white/10 shrink-0" title="Kategorie bearbeiten"><Ic n="dots" size={16}/></button>}
           </div>
           {menu && cat && (
             <div className="pl-5 pr-3 py-2.5 border-b border-neutral-200/60 dark:border-neutral-800 anim-slide">
-              <div className="flex flex-wrap gap-2 mb-2.5">
+              <button onClick={()=>{ setName(cat.name); setMenu(false); }} className="md:hidden flex items-center gap-1.5 min-h-[44px] text-sm font-medium text-neutral-600 dark:text-neutral-300 px-2 rounded-lg">Umbenennen</button>
+              <div className="flex flex-wrap gap-3 mb-2.5">
                 {CAT_COLORS.map(c => (
-                  <button key={c} onClick={()=>onRecolor(cat.id, c)} className={`w-7 h-7 rounded-full transition-transform ${c===cat.color ? 'ring-2 ring-offset-2 ring-neutral-400 dark:ring-offset-neutral-900 scale-110' : ''}`} style={{ background: c }}/>
+                  <button key={c} onClick={()=>onRecolor(cat.id, c)} className={`w-9 h-9 md:w-7 md:h-7 rounded-full transition-transform ${c===cat.color ? 'ring-2 ring-offset-2 ring-neutral-400 dark:ring-offset-neutral-900 scale-110' : ''}`} style={{ background: c }}/>
                 ))}
               </div>
-              <button onClick={()=>onRemove(cat.id)} className="flex items-center gap-1.5 text-xs font-medium text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 px-2 py-1.5 rounded-lg transition-colors"><Ic n="trash" size={12}/> Kategorie löschen</button>
+              <button onClick={()=>onRemove(cat.id)} className="flex items-center gap-1.5 min-h-[44px] md:min-h-0 mt-2 text-sm md:text-xs font-medium text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 px-2 py-1.5 rounded-lg transition-colors"><Ic n="trash" size={14}/> Kategorie löschen</button>
             </div>
           )}
+          {!collapsed && (
           <div className="p-3 pl-4 space-y-2">
             {tasks.length === 0 && <p className="text-xs text-neutral-400 dark:text-neutral-600 text-center py-4">Noch nichts hier.</p>}
-            {tasks.map(t => <TaskItem key={t.id} task={t} isCompleted={t.endKw!==null && t.endKw<=selectedKw} selectedKw={selectedKw} currentKw={currentKw} accentDot="" {...taskProps}/>)}
+            {tasks.length > 0 && shown.length === 0 && <p className="text-xs text-neutral-400 dark:text-neutral-600 text-center py-3">Alles erledigt 🎉</p>}
+            {shown.map(t => <TaskItem key={t.id} task={t} isCompleted={isDoneT(t, selectedKw)} selectedKw={selectedKw} currentKw={currentKw} accentDot="" {...taskProps}/>)}
+            {!showDone && <DoneRow count={done} open={openDone} onToggle={()=>setOpenDone(o=>!o)}/>}
           </div>
-          {cat && (
+          )}
+          {cat && !collapsed && (
             <div className="pl-4 pr-3 py-2 bg-white/70 dark:bg-neutral-900/60 border-t border-neutral-200/60 dark:border-neutral-800 flex items-center gap-1.5">
-              <button onClick={doAdd} className="p-1.5 rounded-lg shrink-0" style={{ color }}><Ic n="plus" size={18}/></button>
+              <button onClick={doAdd} className="w-11 h-11 md:w-auto md:h-auto md:p-1.5 flex items-center justify-center rounded-lg shrink-0" style={{ color }}><Ic n="plus" size={20}/></button>
               <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&doAdd()} onPaste={handlePaste}
                 placeholder="Neue Aufgabe…" enterKeyHint="done"
                 className="flex-1 bg-transparent text-sm text-neutral-700 dark:text-neutral-200 placeholder-neutral-400 dark:placeholder-neutral-600 outline-none min-w-0 py-2"/>
-              <button onClick={()=>fileRef.current?.click()} title="Bild" className="p-2 rounded-lg text-neutral-400 hover:text-blue-500 shrink-0"><Ic n="image" size={15}/></button>
+              <button onClick={()=>fileRef.current?.click()} title="Bild" className="w-11 h-11 md:w-auto md:h-auto md:p-2 flex items-center justify-center rounded-lg text-neutral-400 hover:text-blue-500 shrink-0"><Ic n="image" size={15}/></button>
               <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFile}/>
             </div>
           )}
@@ -985,9 +1198,9 @@
       );
     };
 
-    const CategoryBoard = ({ categories, getGroup, selectedKw, currentKw, addTaskTo, addCategory, renameCategory, recolorCategory, removeCategory, taskProps, onlyOverdue }) => {
-      const loose = getGroup(null);
-      const cards = categories.map(c => ({ c, list: getGroup(c.id) })).filter(x => !onlyOverdue || x.list.length);
+    const CategoryBoard = ({ categories, getGroup, selectedKw, currentKw, addTaskTo, addCategory, renameCategory, recolorCategory, removeCategory, taskProps, onlyOverdue, showDone, collapsed, toggleCollapse, filterCat }) => {
+      const loose = filterCat ? [] : getGroup(null);
+      const cards = categories.filter(c => !filterCat || c.id === filterCat).map(c => ({ c, list: getGroup(c.id) })).filter(x => !onlyOverdue || x.list.length);
       if (categories.length === 0 && loose.length === 0) {
         return (
           <div className="max-w-md mx-auto mt-6 sm:mt-14 bg-white dark:bg-neutral-900 rounded-2xl border border-neutral-200 dark:border-neutral-800 card-shadow p-6 anim-zoom">
@@ -1001,10 +1214,12 @@
         <div className="grid gap-3 grid-cols-1 md:grid-cols-2 xl:grid-cols-3 items-start pb-4">
           {cards.map(({ c, list }) => (
             <CategoryCard key={c.id} cat={c} tasks={list} selectedKw={selectedKw} currentKw={currentKw}
-              onAdd={(text, img) => addTaskTo(c.id, text, img)} onRename={renameCategory} onRecolor={recolorCategory} onRemove={removeCategory} taskProps={taskProps}/>
+              onAdd={(text, img) => addTaskTo(c.id, text, img)} onRename={renameCategory} onRecolor={recolorCategory} onRemove={removeCategory} taskProps={taskProps}
+              showDone={showDone} collapsed={collapsed.includes(c.id)} onToggleCollapse={()=>toggleCollapse(c.id)}/>
           ))}
-          {loose.length > 0 && <CategoryCard cat={null} tasks={loose} selectedKw={selectedKw} currentKw={currentKw} taskProps={taskProps}/>}
-          {!onlyOverdue && (
+          {loose.length > 0 && <CategoryCard cat={null} tasks={loose} selectedKw={selectedKw} currentKw={currentKw} taskProps={taskProps}
+            showDone={showDone} collapsed={collapsed.includes('__none')} onToggleCollapse={()=>toggleCollapse('__none')}/>}
+          {!onlyOverdue && !filterCat && (
             <div className="rounded-2xl border-2 border-dashed border-neutral-300 dark:border-neutral-700 p-4">
               <p className="text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-2">Neue Kategorie</p>
               <NewCategory onAdd={addCategory} existing={categories}/>
@@ -1053,13 +1268,13 @@
               const on = lastCat === c.id;
               return (
                 <button key={c.id} onClick={()=>setLastCat(on ? null : c.id)}
-                  className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[13px] font-medium border transition-all"
+                  className="shrink-0 flex items-center gap-1.5 px-3.5 min-h-[44px] md:min-h-0 md:py-1.5 rounded-full text-[13px] font-medium border transition-all"
                   style={on ? { background: c.color, borderColor: c.color, color: '#fff' } : { borderColor: c.color + '66', color: 'inherit' }}>
                   {!on && <span className="w-2 h-2 rounded-full" style={{ background: c.color }}/>}{c.name}
                 </button>
               );
             })}
-            <button onClick={()=>setAdding(a=>!a)} className="shrink-0 px-3 py-1.5 rounded-full text-[13px] font-medium bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400">+ Neu</button>
+            <button onClick={()=>setAdding(a=>!a)} className="shrink-0 px-3.5 min-h-[44px] md:min-h-0 md:py-1.5 rounded-full text-[13px] font-medium bg-neutral-100 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-400">+ Neu</button>
             {flash && <span className="shrink-0 ml-1 text-xs font-medium text-emerald-600 dark:text-emerald-400 anim-fade">{flash}</span>}
           </div>
           {adding && (
@@ -1102,6 +1317,13 @@
       const [showWeeks, setShowWeeks] = useState(false);
       const [onlyOverdue, setOnlyOverdue] = useState(false);
       const [banner, setBanner] = useState(true);
+      const mobile = useMobile();
+      const [showDone, setShowDone] = useState(() => { const v = readLS('matrix_showdone', null); return v === null ? !isMobileNow() : !!v; });
+      const [filterCat, setFilterCat] = useState(null);
+      const [quadTab, setQuadTab] = useState(() => readLS('matrix_quadtab', 'q1'));
+      const [collapsed, setCollapsed] = useState(() => readLS('matrix_collapsed', []));
+      const [sheetId, setSheetId] = useState(null);
+      const [showMenu, setShowMenu] = useState(false);
       const [notifPerm, setNotifPerm] = useState(typeof Notification !== 'undefined' ? Notification.permission : 'unsupported');
       const [, setTick] = useState(0);
       const [toasts, setToasts] = useState([]);
@@ -1128,6 +1350,11 @@
       useEffect(() => { if(loaded) saveLS('matrix_categories', categories); }, [categories, loaded]);
       useEffect(() => { if(loaded) saveLS('matrix_lastcat', lastCat); }, [lastCat, loaded]);
       useEffect(() => { if(loaded) saveLS('matrix_mode', mode); }, [mode, loaded]);
+      useEffect(() => { saveLS('matrix_showdone', JSON.stringify(showDone)); }, [showDone]);
+      useEffect(() => { saveLS('matrix_quadtab', JSON.stringify(quadTab)); }, [quadTab]);
+      useEffect(() => { saveLS('matrix_collapsed', JSON.stringify(collapsed)); }, [collapsed]);
+      useEffect(() => { setFilterCat(null); setSheetId(null); }, [mode]);
+      const toggleCollapse = (id) => setCollapsed(c => c.includes(id) ? c.filter(x => x !== id) : [...c, id]);
       useEffect(() => {
         saveLS('matrix_dark', String(dark)); document.documentElement.classList.toggle('dark', dark);
         document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#0a0a0a' : '#ffffff');
@@ -1292,23 +1519,30 @@
       useEffect(() => { setOnlyOverdue(false); }, [mode]);
 
       const weekTasks = list.filter(inWeek);
+      const doneInView = weekTasks.filter(t => isDoneT(t, selectedKw)).length;
       const doneCount = list.filter(t=>t.endKw===selectedKw).length;
       const openCount = weekTasks.length - doneCount;
       const weekPct = weekTasks.length ? doneCount / weekTasks.length : 0;
 
       const groups = isFree
         ? [...categories.map(c => ({ id:c.id, label:c.name, color:c.color })), { id:null, label:'Ohne Kategorie', color:'#a1a1aa' }]
-        : QUADS.map(q => ({ id:q.id, label:`${q.label} · ${q.subtitle}`, color:q.color }));
+        : QUADS.map(q => ({ id:q.id, short:q.label, label:`${q.label} · ${q.subtitle}`, color:q.color }));
+      const tagOf = (t) => { const g = groups.find(g => g.id === (t[groupKey] ?? null)); return g ? { label: g.short || g.label, color: g.color } : null; };
+      const today = todayStr();
+      const todayTasks = list.filter(t => t.endKw === null && t.due && t.due <= today).sort((a, b) => a.due.localeCompare(b.due));
+      const openIn = (gid) => getGroup(gid).filter(t => !isDoneT(t, selectedKw)).length;
+      const effFilter = mobile ? filterCat : null;
+      const sheetTask = sheetId ? list.find(t => t.id === sheetId) : null;
       const metaOf = (t) => {
         if (!isFree) return SEARCH_META[t.quadrant];
         const c = categories.find(c => c.id===t.cat);
         return c ? { l:c.name, c:'bg-neutral-100 dark:bg-neutral-800', style:{ color:c.color } } : { l:'Ohne Kategorie', c:'text-neutral-400 bg-neutral-100 dark:bg-neutral-800' };
       };
 
-      const taskProps = { toggleTask, deleteTask, attachImageToTask, removeImage, moveTask, editTask, updateNotes, addToast, reorderTask, restoreTask, postponeTask, setDue, groups, groupKey };
+      const taskProps = { toggleTask, deleteTask, attachImageToTask, removeImage, moveTask, editTask, updateNotes, addToast, reorderTask, restoreTask, postponeTask, setDue, groups, groupKey, mobile, openSheet: setSheetId };
 
-      const btnGhost = "p-2.5 md:p-2 text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-xl transition-colors";
-      const segBtn = (on) => `flex-1 md:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-[10px] text-sm font-medium transition-all ${on ? 'bg-white dark:bg-neutral-700 text-neutral-800 dark:text-neutral-100 shadow-sm' : 'text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200'}`;
+      const btnGhost = "w-10 h-10 md:w-auto md:h-auto flex items-center justify-center md:p-2 text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-xl transition-colors";
+      const segBtn = (on) => `flex-1 md:flex-none flex items-center justify-center gap-1.5 px-3 min-h-[40px] md:min-h-0 md:py-1.5 rounded-[10px] text-sm font-medium transition-all ${on ? 'bg-white dark:bg-neutral-700 text-neutral-800 dark:text-neutral-100 shadow-sm' : 'text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200'}`;
 
       return (
         <div className="flex app-root bg-neutral-100 dark:bg-neutral-950 overflow-hidden text-neutral-800 dark:text-neutral-100">
@@ -1316,7 +1550,7 @@
 
             {/* Header */}
             <header className="shrink-0 bg-white/80 dark:bg-neutral-900/80 backdrop-blur-md border-b border-neutral-200 dark:border-neutral-800 px-3 sm:px-5 py-2 sm:py-2.5 safe-top flex flex-wrap items-center gap-x-3 gap-y-2 z-20">
-              <div className="flex items-center gap-2.5 shrink-0">
+              <div className="hidden min-[420px]:flex items-center gap-2.5 shrink-0">
                 <Logo size={28}/>
                 <span className="hidden sm:inline font-display font-bold text-lg tracking-tight text-neutral-900 dark:text-white">Prio<span className="text-blue-500">Matrix</span></span>
               </div>
@@ -1336,7 +1570,7 @@
               {/* Woche: Handy (Pfeile + Wochenliste als Schublade) */}
               <div className="flex md:hidden items-center shrink-0">
                 <button onClick={()=>goToWeek(Math.max(1,selectedKw-1))} className={btnGhost} aria-label="Vorherige Woche"><Ic n="chevLeft" size={16}/></button>
-                <button onClick={()=>setShowWeeks(true)} className="flex flex-col items-center leading-tight px-1 min-w-[64px]">
+                <button onClick={()=>setShowWeeks(true)} className="flex flex-col items-center justify-center h-10 leading-tight px-1 min-w-[64px]">
                   <span className="font-display font-semibold text-sm">KW {selectedKw}</span>
                   <span className={`text-[10px] ${selectedKw===currentKw ? 'text-blue-500 font-medium' : 'text-neutral-400'}`}>{selectedKw===currentKw ? 'Aktuell' : weekDateRange(selectedKw)}</span>
                 </button>
@@ -1379,20 +1613,27 @@
               <div className="flex items-center gap-1">
                 {overdueCount > 0 && (
                   <button onClick={()=>setOnlyOverdue(o=>!o)} title="Überfällige Aufgaben"
-                    className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-sm font-semibold tabular-nums transition-colors ${onlyOverdue ? 'bg-rose-500 text-white' : 'bg-rose-50 dark:bg-rose-500/15 text-rose-600 dark:text-rose-400'}`}>
+                    className={`flex items-center gap-1 px-2.5 h-10 md:h-auto md:py-1.5 rounded-xl text-sm font-semibold tabular-nums transition-colors ${onlyOverdue ? 'bg-rose-500 text-white' : 'bg-rose-50 dark:bg-rose-500/15 text-rose-600 dark:text-rose-400'}`}>
                     <Ic n="alert" size={14}/>{overdueCount}
                   </button>
                 )}
                 {notifPerm === 'default' && (
-                  <button onClick={enableNotifications} title="Erinnerungen aktivieren" className={btnGhost}><Ic n="bell" size={15}/></button>
+                  <button onClick={enableNotifications} title="Erinnerungen aktivieren" className={`${btnGhost} hidden md:flex`}><Ic n="bell" size={15}/></button>
+                )}
+                {doneInView > 0 && (
+                  <button onClick={()=>setShowDone(d=>!d)} title={showDone ? 'Erledigte ausblenden' : 'Erledigte anzeigen'}
+                    className={`h-10 md:h-auto min-w-[40px] flex items-center justify-center gap-1 px-2 md:px-2.5 md:py-2 rounded-xl text-sm transition-colors ${showDone ? 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' : 'text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800'}`}>
+                    <Ic n="check" size={16}/>{!showDone && <span className="text-xs font-semibold tabular-nums">{doneInView}</span>}
+                  </button>
                 )}
                 <button onClick={()=>setShowSearch(true)} title="Suchen (⌘K)"
-                  className="flex items-center gap-1.5 px-2.5 py-2 md:py-1.5 text-sm text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-xl transition-colors">
+                  className="w-10 h-10 md:w-auto md:h-auto justify-center flex items-center gap-1.5 md:px-2.5 md:py-1.5 text-sm text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-xl transition-colors">
                   <Ic n="search" size={15}/>
                   <kbd className="hidden md:inline text-[11px] bg-neutral-100 dark:bg-neutral-800 px-1.5 py-0.5 rounded-md font-mono text-neutral-400">⌘K</kbd>
                 </button>
-                <button onClick={()=>setShowBackup(true)} title="Backup & Daten" className={btnGhost}><Ic n="db" size={15}/></button>
-                <button onClick={()=>setDark(d=>!d)} title={dark?'Heller Modus':'Dunkler Modus'} className={btnGhost}><Ic n={dark?'sun':'moon'} size={15}/></button>
+                <button onClick={()=>setShowBackup(true)} title="Backup & Daten" className={`${btnGhost} hidden md:flex`}><Ic n="db" size={15}/></button>
+                <button onClick={()=>setDark(d=>!d)} title={dark?'Heller Modus':'Dunkler Modus'} className={`${btnGhost} hidden md:flex`}><Ic n={dark?'sun':'moon'} size={15}/></button>
+                <button onClick={()=>setShowMenu(true)} aria-label="Menü" className={`${btnGhost} md:hidden`}><Ic n="dots" size={18}/></button>
               </div>
             </header>
 
@@ -1400,24 +1641,49 @@
             {onlyOverdue ? (
               <div className="shrink-0 flex items-center gap-2 px-4 py-2 bg-rose-50 dark:bg-rose-500/10 text-rose-700 dark:text-rose-300 text-sm anim-slide">
                 <Ic n="alert" size={15}/><span className="flex-1">Nur überfällige Aufgaben ({overdueCount})</span>
-                <button onClick={()=>setOnlyOverdue(false)} className="font-semibold underline underline-offset-2">Alle zeigen</button>
+                <button onClick={()=>setOnlyOverdue(false)} className="font-semibold underline underline-offset-2 min-h-[44px] md:min-h-0 px-1">Alle zeigen</button>
               </div>
             ) : banner && overdueCount > 0 && (
               <div className="shrink-0 flex items-center gap-2 px-4 py-2 bg-rose-50 dark:bg-rose-500/10 text-rose-700 dark:text-rose-300 text-sm anim-slide">
                 <Ic n="alert" size={15} cls="shrink-0"/>
                 <span className="flex-1 min-w-0">{overdueCount === 1 ? '1 Aufgabe ist überfällig' : `${overdueCount} Aufgaben sind überfällig`}</span>
-                {notifPerm === 'default' && <button onClick={enableNotifications} className="font-semibold underline underline-offset-2 shrink-0">Erinnern</button>}
-                <button onClick={()=>setOnlyOverdue(true)} className="font-semibold underline underline-offset-2 shrink-0">Anzeigen</button>
-                <button onClick={()=>setBanner(false)} className="p-1 -mr-1 shrink-0 opacity-60 hover:opacity-100"><Ic n="x" size={14}/></button>
+                {notifPerm === 'default' && <button onClick={enableNotifications} className="font-semibold underline underline-offset-2 shrink-0 min-h-[44px] md:min-h-0 px-1">Erinnern</button>}
+                <button onClick={()=>setOnlyOverdue(true)} className="font-semibold underline underline-offset-2 shrink-0 min-h-[44px] md:min-h-0 px-1">Anzeigen</button>
+                <button onClick={()=>setBanner(false)} aria-label="Schließen" className="w-11 h-11 md:w-auto md:h-auto md:p-1 flex items-center justify-center -mr-2 shrink-0 opacity-60 hover:opacity-100"><Ic n="x" size={14}/></button>
+              </div>
+            )}
+
+            {/* Handy: Kategorie-Filter bzw. Quadrant-Tabs */}
+            {mobile && ((isFree && categories.length > 0) || (!isFree && view === 'matrix')) && (
+              <div className="shrink-0 flex items-center gap-1.5 px-3 py-2 overflow-x-auto no-scrollbar bg-white/60 dark:bg-neutral-900/60 border-b border-neutral-200/70 dark:border-neutral-800">
+                {(() => {
+                  const cur = isFree ? (filterCat || 'all') : quadTab;
+                  const pick = isFree ? (v => setFilterCat(v === 'all' ? null : v)) : setQuadTab;
+                  const chipCls = on => `shrink-0 flex items-center gap-1.5 px-3.5 min-h-[44px] rounded-full text-[13px] font-medium border transition-colors ${on ? 'bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 border-transparent' : 'border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300'}`;
+                  const items = [
+                    ...(isFree ? [{ id:'all', label:'Alle', n: list.filter(t => inWeek(t) && !isDoneT(t, selectedKw)).length }] : []),
+                    { id:'today', label:'Heute', n: todayTasks.length, color:'#f97316' },
+                    ...(isFree ? categories.map(c => ({ id:c.id, label:c.name, color:c.color, n: openIn(c.id) })) : QUADS.map(q => ({ id:q.id, label:q.label, color:q.color, n: openIn(q.id) }))),
+                  ];
+                  return items.map(it => (
+                    <button key={it.id} onClick={()=>pick(it.id)} className={chipCls(cur === it.id)}>
+                      {it.color && <span className="w-2 h-2 rounded-full" style={{ background: it.color }}/>}{it.label}
+                      <span className={`text-[11px] tabular-nums ${cur === it.id ? 'opacity-70' : 'text-neutral-400'}`}>{it.n}</span>
+                    </button>
+                  ));
+                })()}
               </div>
             )}
 
             {/* Board / Matrix / Kanban */}
             <main className={`flex-1 overflow-y-auto ${isFree ? '' : 'md:overflow-hidden'} dot-grid p-3 md:p-4`}>
-              {isFree ? (
+              {mobile && ((isFree && effFilter === 'today') || (!isFree && view === 'matrix' && quadTab === 'today')) ? (
+                <TodayList tasks={todayTasks} tagOf={tagOf} taskProps={taskProps} selectedKw={selectedKw}/>
+              ) : isFree ? (
                 <CategoryBoard categories={categories} getGroup={getGroup} selectedKw={selectedKw} currentKw={currentKw}
                   addTaskTo={addTaskTo} addCategory={addCategory} renameCategory={renameCategory} recolorCategory={recolorCategory} removeCategory={removeCategory}
-                  taskProps={taskProps} onlyOverdue={onlyOverdue}/>
+                  taskProps={taskProps} onlyOverdue={onlyOverdue}
+                  showDone={showDone} collapsed={collapsed} toggleCollapse={toggleCollapse} filterCat={effFilter}/>
               ) : view === 'matrix' ? (
                 <div className="md:h-full flex gap-2">
                   {/* Vertical axis: Wichtigkeit */}
@@ -1435,8 +1701,8 @@
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:flex-1 md:min-h-0">
-                      {QUADS.map(q => (
-                        <Quadrant key={q.id} id={q.id} subtitle={q.subtitle} tasks={getGroup(q.id)} selectedKw={selectedKw} currentKw={currentKw} addTask={addTask} {...taskProps}/>
+                      {QUADS.filter(q => !mobile || quadTab === q.id).map(q => (
+                        <Quadrant key={q.id} id={q.id} subtitle={q.subtitle} tasks={getGroup(q.id)} selectedKw={selectedKw} currentKw={currentKw} addTask={addTask} showDone={showDone} {...taskProps}/>
                       ))}
                     </div>
                   </div>
@@ -1457,6 +1723,10 @@
 
           {showSearch && <SearchOverlay tasks={list} metaOf={metaOf} onClose={()=>setShowSearch(false)} onJump={t=>{ goToWeek(t.startKw); setShowSearch(false); }}/>}
           {showBackup && <BackupPanel mode={mode} tasks={tasks} freeTasks={freeTasks} categories={categories} onImport={importData} onClose={()=>setShowBackup(false)} addToast={addToast} selectedKw={selectedKw}/>}
+          {showMenu && <MenuSheet dark={dark} setDark={setDark} notifPerm={notifPerm} enableNotifications={enableNotifications} openBackup={()=>setShowBackup(true)} onClose={()=>setShowMenu(false)}/>}
+          {sheetTask && <TaskSheet key={sheetTask.id} task={sheetTask} groups={groups} groupKey={groupKey} selectedKw={selectedKw} onClose={()=>setSheetId(null)}
+            editTask={editTask} updateNotes={updateNotes} setDue={setDue} moveTask={moveTask} toggleTask={toggleTask} postponeTask={postponeTask}
+            deleteTask={deleteTask} restoreTask={restoreTask} addToast={addToast} attachImageToTask={attachImageToTask} removeImage={removeImage}/>}
           <Toast toasts={toasts} dismiss={dismissToast} lift={isFree}/>
         </div>
       );
