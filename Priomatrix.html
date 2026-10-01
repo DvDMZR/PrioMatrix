@@ -302,7 +302,7 @@
       const results = useMemo(() => {
         if (!q.trim()) return [];
         const lq = q.toLowerCase();
-        return tasks.filter(t => t.text.toLowerCase().includes(lq) || (t.notes||'').toLowerCase().includes(lq)).slice(0, 50);
+        return tasks.filter(t => t.text.toLowerCase().includes(lq) || (t.notes||'').toLowerCase().includes(lq) || (t.subs||[]).some(x => x.text.toLowerCase().includes(lq))).slice(0, 50);
       }, [q, tasks]);
       return (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm anim-fade flex items-start justify-center pt-16 sm:pt-24 px-4" onClick={onClose}>
@@ -357,6 +357,7 @@
           for (const t of g.list) {
             const done = t.endKw!==null && t.endKw<=selectedKw;
             md += `- [${done?'x':' '}] ${t.text}${t.due?` *(bis ${t.due})*`:''}${t.startKw<selectedKw?` *(seit KW ${t.startKw})*`:''}\n`;
+            (t.subs || []).forEach((x, i) => { md += t.numbered ? `  ${i+1}. ${x.done?'~~'+x.text+'~~':x.text}\n` : `  - [${x.done?'x':' '}] ${x.text}\n`; });
             if (t.notes) md += t.notes.split('\n').map(l=>`  > ${l}`).join('\n') + '\n';
           }
         }
@@ -495,6 +496,51 @@
       </div>
     );
 
+    // ── Unterpunkte ────────────────────────────────────────────────
+    const SubRow = ({ task, sub, idx, big, showDelete, toggleSub, editSub, deleteSub }) => {
+      const [edit, setEdit] = useState(false);
+      const [val, setVal] = useState(sub.text);
+      const save = () => { setEdit(false); const v = val.trim(); if (v !== sub.text) editSub(task.id, sub.id, v); if (!v) setVal(sub.text); };
+      return (
+        <div className="group/sub flex items-center gap-1">
+          <button onClick={()=>toggleSub(task.id, sub.id)} aria-label={sub.done ? 'Wieder öffnen' : 'Erledigt'}
+            className={`shrink-0 flex items-center justify-center rounded-full ${big ? 'w-11 h-11' : 'w-6 h-6'} ${sub.done ? 'text-emerald-500' : 'text-neutral-300 dark:text-neutral-600 hover:text-emerald-500'}`}>
+            <Ic n={sub.done ? 'check' : 'circle'} size={big ? 22 : 15}/>
+          </button>
+          {task.numbered && <span className="shrink-0 text-xs font-medium text-neutral-400 tabular-nums">{idx + 1}.</span>}
+          {edit ? (
+            <input autoFocus value={val} onChange={e=>setVal(e.target.value)} onBlur={save}
+              onKeyDown={e=>{ if(e.key==='Enter') save(); if(e.key==='Escape'){ setVal(sub.text); setEdit(false); } }}
+              className="flex-1 min-w-0 bg-blue-50 dark:bg-blue-900/30 border border-blue-300 dark:border-blue-600 rounded-lg px-2 py-1 text-sm text-neutral-800 dark:text-neutral-100 outline-none"/>
+          ) : (
+            <span onClick={()=>setEdit(true)} className={`flex-1 min-w-0 break-words text-sm leading-snug py-1.5 cursor-text ${sub.done ? 'line-through text-neutral-400 dark:text-neutral-500' : 'text-neutral-700 dark:text-neutral-200'}`}>{sub.text}</span>
+          )}
+          {showDelete && (
+            <button onClick={()=>deleteSub(task.id, sub.id)} aria-label="Unterpunkt löschen"
+              className={`shrink-0 flex items-center justify-center rounded-lg text-neutral-400 hover:text-rose-500 ${big ? 'w-11 h-11' : 'w-6 h-6 opacity-0 group-hover/sub:opacity-100'}`}><Ic n="x" size={big ? 16 : 12}/></button>
+          )}
+        </div>
+      );
+    };
+    const SubList = ({ task, big, showInput, showDelete, toggleSub, editSub, deleteSub, addSubs }) => {
+      const [v, setV] = useState('');
+      const add = () => { if (v.trim()) { addSubs(task.id, v); setV(''); } };
+      return (
+        <div className="space-y-0.5">
+          {(task.subs || []).map((sb, i) => <SubRow key={sb.id} task={task} sub={sb} idx={i} big={big} showDelete={showDelete} toggleSub={toggleSub} editSub={editSub} deleteSub={deleteSub}/>)}
+          {showInput && (
+            <div className="flex items-center gap-1 pt-1">
+              <input autoFocus={!big} value={v} onChange={e=>setV(e.target.value)} onKeyDown={e=>e.key==='Enter'&&add()} enterKeyHint="done"
+                onPaste={e=>{ const t = e.clipboardData?.getData('text') || ''; if (/\n/.test(t.trim())) { e.preventDefault(); addSubs(task.id, t); setV(''); } }}
+                placeholder="Unterpunkt hinzufügen…"
+                className={`flex-1 min-w-0 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg px-2.5 text-sm text-neutral-700 dark:text-neutral-200 outline-none focus:border-blue-400 placeholder-neutral-400 ${big ? 'min-h-[44px]' : 'py-1'}`}/>
+              <button onClick={add} aria-label="Unterpunkt hinzufügen" className={`shrink-0 flex items-center justify-center rounded-lg text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 ${big ? 'w-11 h-11' : 'w-7 h-7'}`}><Ic n="plus" size={big ? 18 : 14}/></button>
+            </div>
+          )}
+        </div>
+      );
+    };
+
     // ── Wischen: rechts = erledigt, links = Details ────────────────
     const SwipeRow = ({ children, done, onRight, onLeft }) => {
       const [dx, setDx] = useState(0);
@@ -541,7 +587,7 @@
 
     // ── Task-Details (Bottom-Sheet) ────────────────────────────────
     const SheetLabel = ({ children }) => <p className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400 mb-2 mt-4">{children}</p>;
-    const TaskSheet = ({ task, groups, groupKey, selectedKw, onClose, editTask, updateNotes, setDue, moveTask, toggleTask, postponeTask, deleteTask, restoreTask, addToast, attachImageToTask, removeImage }) => {
+    const TaskSheet = ({ task, groups, groupKey, selectedKw, onClose, toggleSub, editSub, deleteSub, addSubs, setNumbered, editTask, updateNotes, setDue, moveTask, toggleTask, postponeTask, deleteTask, restoreTask, addToast, attachImageToTask, removeImage }) => {
       const [text, setText] = useState(task.text);
       const [notes, setNotes] = useState(task.notes || '');
       const [lightbox, setLightbox] = useState(false);
@@ -594,6 +640,16 @@
                 </button>
               ))}
             </div>
+
+            {groupKey === 'cat' && (
+              <>
+                <SheetLabel>Unterpunkte</SheetLabel>
+                <SubList task={task} big showInput showDelete toggleSub={toggleSub} editSub={editSub} deleteSub={deleteSub} addSubs={addSubs}/>
+                {(task.subs || []).length > 0 && (
+                  <button onClick={()=>setNumbered(task.id, !task.numbered)} className={`${chip(!!task.numbered)} mt-2`}>Nummerieren</button>
+                )}
+              </>
+            )}
 
             <SheetLabel>Notiz</SheetLabel>
             <textarea value={notes} onChange={e=>setNotes(e.target.value)} rows={3} placeholder="Notizen, Details, Links…"
@@ -650,7 +706,7 @@
     );
 
     // ── TaskItem ───────────────────────────────────────────────────
-    const TaskItem = ({ task, isCompleted, accentDot, mobile, openSheet, tag, groups, groupKey, moveTask, setDue, toggleTask, deleteTask, attachImageToTask, removeImage, editTask, updateNotes, addToast, currentKw, selectedKw, reorderTask, restoreTask, postponeTask }) => {
+    const TaskItem = ({ task, isCompleted, accentDot, mobile, openSheet, tag, toggleSub, editSub, deleteSub, addSubs, groups, groupKey, moveTask, setDue, toggleTask, deleteTask, attachImageToTask, removeImage, editTask, updateNotes, addToast, currentKw, selectedKw, reorderTask, restoreTask, postponeTask }) => {
       const [dropOver, setDropOver] = useState(false);
       const [dragging, setDragging] = useState(false);
       const [editing, setEditing] = useState(false);
@@ -660,6 +716,11 @@
       const [showDue, setShowDue] = useState(false);
       const [showMove, setShowMove] = useState(false);
       const [showActs, setShowActs] = useState(false);
+      const [showSubs, setShowSubs] = useState(false);
+      const [addingSub, setAddingSub] = useState(false);
+      const subs = task.subs || [];
+      const subDone = subs.filter(x => x.done).length;
+      const canSubs = groupKey === 'cat';
       const fileRef = useRef(null);
       const carriedOver = !isCompleted && task.startKw < selectedKw;
       const overdue = isOverdue(task);
@@ -693,7 +754,8 @@
       if (mobile) {
         return (
           <SwipeRow done={isCompleted} onRight={()=>toggleTask(task.id)} onLeft={()=>openSheet(task.id)}>
-            <div className={`flex items-center pl-0.5 pr-0.5 min-h-[60px] rounded-xl border bg-white dark:bg-neutral-800 ${isCompleted ? 'border-neutral-200/70 dark:border-neutral-700/60 opacity-60' : 'border-neutral-200 dark:border-neutral-700'}`}>
+            <div className={`rounded-xl border bg-white dark:bg-neutral-800 ${isCompleted ? 'border-neutral-200/70 dark:border-neutral-700/60 opacity-60' : 'border-neutral-200 dark:border-neutral-700'}`}>
+            <div className="flex items-center pl-0.5 pr-0.5 min-h-[60px]">
               <button onClick={()=>toggleTask(task.id)} aria-label={isCompleted ? 'Wieder öffnen' : 'Erledigt'}
                 className={`shrink-0 w-12 h-12 flex items-center justify-center rounded-full ${isCompleted ? 'text-emerald-500' : 'text-neutral-300 dark:text-neutral-600 active:text-emerald-500'}`}>
                 <Ic n={isCompleted ? 'check' : 'circle'} size={26}/>
@@ -714,7 +776,18 @@
                   </span>
                 )}
               </button>
+              {canSubs && subs.length > 0 && !isCompleted && (
+                <button onClick={()=>setShowSubs(o=>!o)} aria-label="Unterpunkte" className={`shrink-0 h-11 px-2 flex items-center gap-1 rounded-xl text-xs font-semibold tabular-nums ${subDone === subs.length ? 'text-emerald-600 dark:text-emerald-400' : 'text-neutral-500 dark:text-neutral-400'}`}>
+                  <Ic n="check" size={13}/>{subDone}/{subs.length}<Ic n={showSubs ? 'chevUp' : 'chevDown'} size={13}/>
+                </button>
+              )}
               <button onClick={()=>openSheet(task.id)} aria-label="Details" className="shrink-0 w-11 h-11 flex items-center justify-center rounded-xl text-neutral-400 active:bg-neutral-100 dark:active:bg-neutral-700"><Ic n="dots" size={18}/></button>
+            </div>
+            {canSubs && showSubs && !isCompleted && subs.length > 0 && (
+              <div className="pl-10 pr-2 pb-2 border-t border-neutral-100 dark:border-neutral-700/60">
+                <SubList task={task} big toggleSub={toggleSub} editSub={editSub} deleteSub={deleteSub} addSubs={addSubs}/>
+              </div>
+            )}
             </div>
           </SwipeRow>
         );
@@ -753,7 +826,7 @@
                     {task.text}
                   </span>
                 )}
-                {(carriedOver || task.notes || task.due) && !editing && (
+                {(carriedOver || task.notes || task.due || subs.length > 0) && !editing && (
                   <div className="flex flex-wrap items-center gap-2 mt-1 ml-0">
                     {task.due && (
                       <button onClick={()=>setShowDue(true)} title="Zieldatum ändern"
@@ -768,6 +841,11 @@
                       </span>
                     )}
                     {task.notes && <Ic n="note" size={11} cls="text-neutral-400 dark:text-neutral-500"/>}
+                    {subs.length > 0 && (
+                      <span className={`inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded-md ${subDone === subs.length ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10' : 'text-neutral-500 dark:text-neutral-400 bg-neutral-100 dark:bg-neutral-700/50'}`}>
+                        <Ic n="check" size={10}/> {subDone}/{subs.length}
+                      </span>
+                    )}
                   </div>
                 )}
               </div>
@@ -781,6 +859,9 @@
                 {!isCompleted && selectedKw < 52 && (
                   <button onClick={()=>postponeTask(task.id)} title="Auf nächste Woche schieben" className="p-1 rounded-lg text-neutral-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/30 transition-colors"><Ic n="arrowRight" size={13}/></button>
                 )}
+                {canSubs && !isCompleted && (
+                  <button onClick={()=>setAddingSub(a=>!a)} title="Unterpunkt hinzufügen" className="p-1 rounded-lg text-neutral-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"><Ic n="plus" size={13}/></button>
+                )}
                 <button onClick={()=>setShowNotes(true)} title="Notiz" className="p-1 rounded-lg text-neutral-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"><Ic n="note" size={13}/></button>
                 <button onClick={()=>fileRef.current?.click()} title="Bild" className="p-1 rounded-lg text-neutral-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"><Ic n="image" size={13}/></button>
                 <button onClick={handleDelete} title="Löschen" className="p-1 rounded-lg text-neutral-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/30 transition-colors"><Ic n="trash" size={13}/></button>
@@ -788,6 +869,12 @@
             </div>
 
             <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleFile}/>
+
+            {canSubs && !isCompleted && (subs.length > 0 || addingSub) && (
+              <div className="mt-1.5 ml-6">
+                <SubList task={task} showInput={addingSub} showDelete toggleSub={toggleSub} editSub={editSub} deleteSub={deleteSub} addSubs={addSubs}/>
+              </div>
+            )}
 
             {task.notes && !editing && <p className="mt-1 ml-7 text-xs text-neutral-400 dark:text-neutral-500 line-clamp-2 leading-relaxed">{task.notes}</p>}
 
@@ -1437,6 +1524,15 @@
       const editTask = (id, newText) => setList(prev => prev.map(t => t.id===id ? {...t, text:newText} : t));
       const restoreTask = (snap) => setList(prev => [...prev, snap]);
       const updateNotes = (id, notes) => setList(prev => prev.map(t => t.id===id ? {...t, notes} : t));
+      const patchTask = (id, fn) => setList(prev => prev.map(t => t.id === id ? fn(t) : t));
+      const addSubs = (id, text) => {
+        const lines = text.split(/\r?\n/).map(x => x.trim()).filter(Boolean);
+        if (lines.length) patchTask(id, t => ({ ...t, subs: [...(t.subs || []), ...lines.map(l => ({ id: newId(), text: l, done: false }))] }));
+      };
+      const toggleSub = (id, sid) => patchTask(id, t => ({ ...t, subs: (t.subs || []).map(x => x.id === sid ? { ...x, done: !x.done } : x) }));
+      const editSub = (id, sid, text) => patchTask(id, t => ({ ...t, subs: (t.subs || []).flatMap(x => x.id !== sid ? [x] : (text.trim() ? [{ ...x, text: text.trim() }] : [])) }));
+      const deleteSub = (id, sid) => patchTask(id, t => ({ ...t, subs: (t.subs || []).filter(x => x.id !== sid) }));
+      const setNumbered = (id, numbered) => patchTask(id, t => ({ ...t, numbered }));
       const setDue = (id, due) => setList(prev => prev.map(t => t.id===id ? {...t, due} : t));
       const attachImageToTask = (id, img) => setList(prev => prev.map(t => t.id===id ? {...t,image:img} : t));
       const removeImage = (id) => setList(prev => prev.map(t => t.id===id ? {...t,image:null} : t));
@@ -1539,7 +1635,7 @@
         return c ? { l:c.name, c:'bg-neutral-100 dark:bg-neutral-800', style:{ color:c.color } } : { l:'Ohne Kategorie', c:'text-neutral-400 bg-neutral-100 dark:bg-neutral-800' };
       };
 
-      const taskProps = { toggleTask, deleteTask, attachImageToTask, removeImage, moveTask, editTask, updateNotes, addToast, reorderTask, restoreTask, postponeTask, setDue, groups, groupKey, mobile, openSheet: setSheetId };
+      const taskProps = { toggleTask, deleteTask, attachImageToTask, removeImage, moveTask, editTask, updateNotes, addToast, reorderTask, restoreTask, postponeTask, setDue, groups, groupKey, mobile, openSheet: setSheetId, addSubs, toggleSub, editSub, deleteSub };
 
       const btnGhost = "w-10 h-10 md:w-auto md:h-auto flex items-center justify-center md:p-2 text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-xl transition-colors";
       const segBtn = (on) => `flex-1 md:flex-none flex items-center justify-center gap-1.5 px-3 min-h-[40px] md:min-h-0 md:py-1.5 rounded-[10px] text-sm font-medium transition-all ${on ? 'bg-white dark:bg-neutral-700 text-neutral-800 dark:text-neutral-100 shadow-sm' : 'text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200'}`;
@@ -1725,6 +1821,7 @@
           {showBackup && <BackupPanel mode={mode} tasks={tasks} freeTasks={freeTasks} categories={categories} onImport={importData} onClose={()=>setShowBackup(false)} addToast={addToast} selectedKw={selectedKw}/>}
           {showMenu && <MenuSheet dark={dark} setDark={setDark} notifPerm={notifPerm} enableNotifications={enableNotifications} openBackup={()=>setShowBackup(true)} onClose={()=>setShowMenu(false)}/>}
           {sheetTask && <TaskSheet key={sheetTask.id} task={sheetTask} groups={groups} groupKey={groupKey} selectedKw={selectedKw} onClose={()=>setSheetId(null)}
+            addSubs={addSubs} toggleSub={toggleSub} editSub={editSub} deleteSub={deleteSub} setNumbered={setNumbered}
             editTask={editTask} updateNotes={updateNotes} setDue={setDue} moveTask={moveTask} toggleTask={toggleTask} postponeTask={postponeTask}
             deleteTask={deleteTask} restoreTask={restoreTask} addToast={addToast} attachImageToTask={attachImageToTask} removeImage={removeImage}/>}
           <Toast toasts={toasts} dismiss={dismissToast} lift={isFree}/>
